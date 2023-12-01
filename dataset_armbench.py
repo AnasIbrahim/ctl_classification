@@ -10,7 +10,6 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import transforms as T
 from torchvision.io import read_image
-from torchvision.utils import save_image
 
 class ArmBenchDataset(Dataset):
     def __init__(self, training_dir, mode='train'):
@@ -38,8 +37,7 @@ class ArmBenchDataset(Dataset):
         ])
 
     def __len__(self):
-        # return len(self.query_objects_ids)  # number of query (picks) in train or test
-        return 100
+        return len(self.query_objects_ids)  # number of query (picks) in train or test
 
     def load_folder_images(self, folder_path):
         images = []
@@ -102,7 +100,8 @@ class ArmBenchDataset(Dataset):
                 gallery_objs_ids.append(obj_id)
             return query_imgs, gallery_objs_imgs, gallery_objs_ids, gallery_matching_id
 
-def test_armbench(model, device, test_loader, epoch):
+
+def test_armbench(model, device, test_loader, batch_size, epoch):
     print("Evaluating model")
     model.eval()
 

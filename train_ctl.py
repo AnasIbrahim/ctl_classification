@@ -10,6 +10,7 @@ from torch.utils.data import Dataset
 from torch.optim.lr_scheduler import StepLR
 
 from dataset_armbench import ArmBenchDataset, test_armbench
+from dataset_bop import BOPDataset, test_bop
 
 #class CTLModel(nn.Module):
 #    def __init__(self):
@@ -80,6 +81,7 @@ def main():
     args = parser.parse_args()
 
     armbench_dataset_path = '/media/gouda/ssd_data/datasets/armbench-object-id-0.1'
+    hope_dataset_path = '/media/gouda/ssd_data/datasets/hope/classification'
     output_path = '/home/gouda/segmentation/ctl_training_output/gouda/train_1'
     
     torch.manual_seed(args.seed)
@@ -94,10 +96,12 @@ def main():
     train_kwargs.update(cuda_kwargs)
     test_kwargs.update(cuda_kwargs)
 
-    train_dataset = ArmBenchDataset(armbench_dataset_path, mode='train')
-    test_dataset = ArmBenchDataset(armbench_dataset_path, mode='test')
-    train_loader = torch.utils.data.DataLoader(train_dataset,**train_kwargs)
-    test_loader = torch.utils.data.DataLoader(test_dataset, **test_kwargs)
+    armbench_train_dataset = ArmBenchDataset(armbench_dataset_path, mode='train')
+    armbench_test_dataset = ArmBenchDataset(armbench_dataset_path, mode='test')
+    bop_test_dataset = BOPDataset(hope_dataset_path)
+    armbench_train_loader = torch.utils.data.DataLoader(armbench_train_dataset,**train_kwargs)
+    armbench_test_loader = torch.utils.data.DataLoader(armbench_test_dataset, **test_kwargs)
+    bop_test_loader = torch.utils.data.DataLoader(bop_test_dataset, **test_kwargs)
     print("Loaded training and test dataset")
 
     #model = CTLModel().to(device)
@@ -111,13 +115,14 @@ def main():
     scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
 
     # Run test before training
-    test_armbench(model, device, test_loader, 0)
+    test_bop(model, device, bop_test_loader, args.test_batch_size, 0)
+    test_armbench(model, device, armbench_test_loader, args.test_batch_size, 0)
 
     start_time = datetime.datetime.now()
 
     for epoch in range(1, args.epochs + 1):
-        train(args, model, device, train_loader, optimizer, epoch)
-        test_armbench(model, device, test_loader, epoch)
+        train(args, model, device, armbench_train_loader, optimizer, epoch)
+        test_armbench(model, device, armbench_test_loader, epoch)
         scheduler.step()
 
         print("Epoch Time:")
