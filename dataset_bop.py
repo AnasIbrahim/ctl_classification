@@ -53,16 +53,14 @@ class BOPDataset(Dataset):
         for query_obj_id in range(1, self.num_objects+1):
             query_imgs_paths = os.path.join(self.query_imgs_paths, f'obj_{query_obj_id:06}')
             this_obj_query_images = self.load_folder_images(query_imgs_paths, image_extension='png')
-            for img in this_obj_query_images:
-                query_imgs.append(img)
-                query_ids.append(query_obj_id)
+            query_imgs += this_obj_query_images
+            query_ids += [query_obj_id] * len(this_obj_query_images)
         # load gallery objects
-        for gallery_obj_id in range(1, self.num_objects+1):
+        for gallery_obj_id in range(1, 28):  # TODO change to self.num_objects+1
             gallery_imgs_paths = os.path.join(self.gallery_imgs_paths, f'obj_{gallery_obj_id:06}')
             this_obj_gallery_images = self.load_folder_images(gallery_imgs_paths)
-            for img in this_obj_gallery_images:
-                gallery_imgs.append(img)
-                gallery_ids.append(gallery_obj_id)
+            gallery_imgs += this_obj_gallery_images
+            gallery_ids += [gallery_obj_id] * len(this_obj_gallery_images)
         # stack list of tensor to tensor
         query_imgs = torch.stack(query_imgs)
         gallery_imgs = torch.stack(gallery_imgs)
@@ -81,6 +79,10 @@ def test_bop(model, device, test_loader, batch_size, epoch):
         # get embeddings - dataset is small, all images can be loaded at once
         query_embeddings = model(query_imgs)
         gallery_embeddings = model(gallery_imgs)
+
+    # normalize embeddings
+    query_embeddings = torch.nn.functional.normalize(query_embeddings, dim=1, p=2)
+    gallery_embeddings = torch.nn.functional.normalize(gallery_embeddings, dim=1, p=2)
 
     # get predictions
     query_ids = np.array(query_ids)
@@ -107,25 +109,20 @@ def test_bop(model, device, test_loader, batch_size, epoch):
     # calculate distance matrix between query and gallery centroids
     dist_matrix = torch.cdist(query_embeddings, gallery_centroids)
 
-    # find closest top=5 for each query object
+    # find the closest top=5 for each query object
     top_5_ids = torch.argsort(dist_matrix, dim=1)[:, :5]
     top_5_ids = top_5_ids.cpu().numpy()
-    # get object ids of top 5 closest objects
-    top_5_gallery_ids = []
-    for i in range(len(query_ids)):
-        top_5_gallery_ids.append(gallery_ids[top_5_ids[i]])
     # check if gallery_obj_id is in top_5
     rank_5 = []
     for i in range(len(query_ids)):
-        if query_ids[i] in top_5_gallery_ids[i]:
+        if np.any(top_5_ids[i] == query_ids[i]):
             rank_5.append(1)
         else:
             rank_5.append(0)
-    rank_5 = np.mean(rank_5)
     # check if gallery_obj_id is the closest
     rank_1 = []
     for i in range(len(query_ids)):
-        if query_ids[i] == top_5_gallery_ids[i][0]:
+        if query_ids[i] == top_5_ids[i][0]:
             rank_1.append(1)
         else:
             rank_1.append(0)

@@ -122,6 +122,10 @@ def test_armbench(model, device, test_loader, batch_size, epoch):
             query_embeddings = model(query_imgs)
             gallery_obj_embeddings = [model(gallery_imgs) for gallery_imgs in gallery_objs_imgs]
 
+            # normalize embeddings
+            query_embeddings = torch.nn.functional.normalize(query_embeddings, dim=1, p=2)
+            gallery_obj_embeddings = [torch.nn.functional.normalize(gallery_obj_embeddings, dim=1, p=2) for gallery_obj_embeddings in gallery_obj_embeddings]
+
             # calculate centroids
             query_centroid = torch.mean(query_embeddings, dim=0)
             gallery_objs_centroids = [torch.mean(gallery_embeddings, dim=0) for gallery_embeddings in gallery_obj_embeddings]
