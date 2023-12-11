@@ -12,15 +12,23 @@ from torch.optim.lr_scheduler import StepLR
 from dataset_armbench import ArmBenchDataset, test_armbench
 from dataset_bop import BOPDataset, test_bop
 
-#class CTLModel(nn.Module):
-#    def __init__(self):
-#        super(CTLModel, self).__init__()
-#        self.resnet = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2)
-#
-#    def forward(self, img):
-#        output = self.resnet(img)
-#        output = output.view(output.size()[0], -1)
-#        return output
+
+class CTLModel(nn.Module):
+    def __init__(self):
+        super(CTLModel, self).__init__()
+
+        # ResNet
+        #resnet = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V1)
+        # remove last 2 layer
+        #self.backbone = nn.Sequential(*list(resnet.children())[:-1])
+
+        # VIT
+        self.backbone = torchvision.models.vit_b_32(weights=torchvision.models.ViT_B_32_Weights.IMAGENET1K_V1)
+
+    def forward(self, img):
+        output = self.backbone(img)
+        output = output.view(output.size()[0], -1)
+        return output
 
 
 class CentroidTripletLoss(nn.Module):
@@ -70,7 +78,7 @@ def main():
     parser = argparse.ArgumentParser(description='Train backbones for object classification (reidentification) using centroid loss using ArmBench dataset')
     parser.add_argument('--train-batch-size', type=int, default=64, metavar='N',
                         help='input batch size for training (= number of objects used in one training step) (default: 64)')
-    parser.add_argument('--test-batch-size', type=int, default=500, metavar='N',
+    parser.add_argument('--test-batch-size', type=int, default=150, metavar='N',
                         help='input batch size for testing (= number of objects used in one testing step) (default: 1000)')
     parser.add_argument('--epochs', type=int, default=50, metavar='N',
                         help='number of epochs to train (default: 14)')
@@ -104,10 +112,10 @@ def main():
     bop_test_loader = torch.utils.data.DataLoader(bop_test_dataset, **test_kwargs)
     print("Loaded training and test dataset")
 
-    #model = CTLModel().to(device)
-    #model = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V1)
-    model = torchvision.models.resnet152(weights=torchvision.models.ResNet152_Weights.IMAGENET1K_V2)
-    model = model.to(device)
+    model = CTLModel().to(device)
+    #model = torchvision.models.resnet152(weights=torchvision.models.ResNet152_Weights.IMAGENET1K_V2)
+    #model = model.to(device)
+
     model = nn.DataParallel(model)
     print("Model created")
 
