@@ -110,6 +110,9 @@ class ArmBenchDataset(Dataset):
             # Matching gallery object is always the first object in the gallery list
             return query_imgs, gallery_objs_imgs, gallery_objs_local_ids, gallery_objs_names, gallery_matching_id
 
+    @staticmethod
+    def collate_fn(batch):
+        return  batch
 
 def test_armbench(model, device, test_loader, batch_size, epoch):
     print("Evaluating model")
@@ -122,42 +125,66 @@ def test_armbench(model, device, test_loader, batch_size, epoch):
     rank_1, rank_2, rank_3 = [], [], []
 
     with torch.no_grad():
-        for query_id in tqdm.tqdm(range(len(test_loader.dataset))):
-            # get query and gallery images
-            query_imgs, gallery_objs_imgs, gallery_objs_local_ids, gallery_objs_names, gallery_matching_id = test_loader.dataset[query_id]
-            #query_imgs, gallery_objs_imgs = query_imgs.to(device), [gallery_imgs.to(device) for gallery_imgs in gallery_objs_imgs]
+        for batches_data in tqdm.tqdm(test_loader):
+            # combine query and gallery images from all samples in the batch and presrve the ids
+            batch_query_imgs, batch_gallery_objs_imgs = [], []
+            batch_query_ids, batch_gallery_ids = [], []
+            for batch_id, batch_data in enumerate(batches_data):
+                query_imgs, gallery_objs_imgs, gallery_objs_local_ids, gallery_objs_names, gallery_matching_id = batch_data
+                query_imgs, gallery_objs_imgs = query_imgs.to(device), gallery_objs_imgs.to(device)
+                batch_query_imgs += [query_imgs]
+                batch_gallery_objs_imgs += [gallery_objs_imgs]
+                batch_query_ids += [batch_id] * len(query_imgs)
+                batch_gallery_ids += [batch_id] * len(gallery_objs_imgs)
 
-            # get embeddings
-            query_embeddings = model(query_imgs)
-            gallery_obj_embeddings = model(gallery_objs_imgs)
+            batch_query_imgs = torch.cat(batch_query_imgs)
+            batch_gallery_objs_imgs = torch.cat(batch_gallery_objs_imgs)
+            batch_query_ids = torch.tensor(batch_query_ids)
+            batch_gallery_ids = torch.tensor(batch_gallery_ids)
+
+            # combine query and gallery together
+            all_imgs = torch.cat([batch_query_imgs, batch_gallery_objs_imgs])
+            # runt the model
+            all_embeddings = model(all_imgs)
+
+            # separate query and gallery embeddings
+            batch_query_embeddings = all_embeddings[:len(batch_query_imgs)]
+            batch_gallery_obj_embeddings = all_embeddings[len(batch_query_imgs):]
 
             # normalize embeddings
-            query_embeddings = torch.nn.functional.normalize(query_embeddings, dim=1, p=2)
-            gallery_obj_embeddings = torch.nn.functional.normalize(gallery_obj_embeddings, dim=1, p=2)
+            # TODO should we normalize the query and gallery embeddings together?
+            batch_query_embeddings = torch.nn.functional.normalize(batch_query_embeddings, dim=1, p=2)
+            batch_gallery_obj_embeddings = torch.nn.functional.normalize(batch_gallery_obj_embeddings, dim=1, p=2)
 
-            # calculate centroids
-            query_centroid = torch.mean(query_embeddings, dim=0)
-            # calculate centroids for each gallery object
-            gallery_objs_centroids = []
-            for i in range(len(gallery_objs_names)):
-                this_obj_gallery_embeddings = gallery_obj_embeddings[gallery_objs_local_ids == i]
-                this_obj_gallery_centroid = torch.mean(this_obj_gallery_embeddings, dim=0)
-                gallery_objs_centroids.append(this_obj_gallery_centroid)
-            gallery_objs_centroids = torch.stack(gallery_objs_centroids)
+            for batch_id, batch_data in enumerate(batches_data):
+                _, _, gallery_objs_local_ids, gallery_objs_names, gallery_matching_id = batch_data
+                # separate each batch embeddings
+                query_embeddings = batch_query_embeddings[batch_query_ids == batch_id]
+                gallery_obj_embeddings = batch_gallery_obj_embeddings[batch_gallery_ids == batch_id]
 
-            # calculate distances between gallery centroid and query objects centroids
-            dist_matrix = torch.nn.functional.cosine_similarity(query_centroid.unsqueeze(0), gallery_objs_centroids, dim=1)
-            dist_matrix = 1 - dist_matrix
-            dist_matrix = dist_matrix.cpu().numpy()
+                # calculate centroids
+                query_centroid = torch.mean(query_embeddings, dim=0)
+                # calculate centroids for each gallery object
+                gallery_objs_centroids = []
+                for i in range(len(gallery_objs_names)):
+                    this_obj_gallery_embeddings = gallery_obj_embeddings[gallery_objs_local_ids == i]
+                    this_obj_gallery_centroid = torch.mean(this_obj_gallery_embeddings, dim=0)
+                    gallery_objs_centroids.append(this_obj_gallery_centroid)
+                gallery_objs_centroids = torch.stack(gallery_objs_centroids)
 
-            # sort closest objects
-            top_ids = np.argsort(dist_matrix)
-            # get object ids of the closest objects
-            top_ids = [gallery_objs_names[i] for i in top_ids]
-            # get rankings
-            rank_1 += [1] if gallery_matching_id in top_ids[:1] else [0]
-            rank_2 += [1] if gallery_matching_id in top_ids[:2] else [0]
-            rank_3 += [1] if gallery_matching_id in top_ids[:3] else [0]
+                # calculate distances between gallery centroid and query objects centroids
+                dist_matrix = torch.nn.functional.cosine_similarity(query_centroid.unsqueeze(0), gallery_objs_centroids, dim=1)
+                dist_matrix = 1 - dist_matrix
+                dist_matrix = dist_matrix.cpu().numpy()
+
+                # sort closest objects
+                top_ids = np.argsort(dist_matrix)
+                # get object ids of the closest objects
+                top_ids = [gallery_objs_names[i] for i in top_ids]
+                # get rankings
+                rank_1 += [1] if gallery_matching_id in top_ids[:1] else [0]
+                rank_2 += [1] if gallery_matching_id in top_ids[:2] else [0]
+                rank_3 += [1] if gallery_matching_id in top_ids[:3] else [0]
 
     # calculate CMC metrics
     rank_1, rank_2, rank_3 = np.mean(rank_1), np.mean(rank_2), np.mean(rank_3)

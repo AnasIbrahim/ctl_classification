@@ -84,9 +84,9 @@ def test_bop(model, device, test_loader, batch_size, epoch):
             gallery_embeddings.append(model(gallery_imgs[i:i+batch_size]))
         gallery_embeddings = torch.cat(gallery_embeddings)
 
-    # normalize embeddings TODO uncomment
-    #query_embeddings = torch.nn.functional.normalize(query_embeddings, dim=1, p=2)
-    #gallery_embeddings = torch.nn.functional.normalize(gallery_embeddings, dim=1, p=2)
+    # normalize embeddings
+    query_embeddings = torch.nn.functional.normalize(query_embeddings, dim=1, p=2)
+    gallery_embeddings = torch.nn.functional.normalize(gallery_embeddings, dim=1, p=2)
 
     # get predictions
     query_ids = np.array(query_ids)

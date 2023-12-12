@@ -78,8 +78,8 @@ def main():
     parser = argparse.ArgumentParser(description='Train backbones for object classification (reidentification) using centroid loss using ArmBench dataset')
     parser.add_argument('--train-batch-size', type=int, default=64, metavar='N',
                         help='input batch size for training (= number of objects used in one training step) (default: 64)')
-    parser.add_argument('--test-batch-size', type=int, default=150, metavar='N',
-                        help='input batch size for testing (= number of objects used in one testing step) (default: 1000)')
+    parser.add_argument('--test-batch-size', type=int, default=12, metavar='N',
+                        help='input batch size for testing (= number of objects used in one testing step)')
     parser.add_argument('--epochs', type=int, default=50, metavar='N',
                         help='number of epochs to train (default: 14)')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -108,7 +108,7 @@ def main():
     armbench_test_dataset = ArmBenchDataset(armbench_dataset_path, mode='test')
     bop_test_dataset = BOPDataset(hope_dataset_path)
     armbench_train_loader = torch.utils.data.DataLoader(armbench_train_dataset,**train_kwargs)
-    armbench_test_loader = torch.utils.data.DataLoader(armbench_test_dataset, **test_kwargs)
+    armbench_test_loader = torch.utils.data.DataLoader(armbench_test_dataset, collate_fn=ArmBenchDataset.collate_fn, **test_kwargs)
     bop_test_loader = torch.utils.data.DataLoader(bop_test_dataset, **test_kwargs)
     print("Loaded training and test dataset")
 
