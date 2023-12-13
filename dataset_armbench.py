@@ -49,12 +49,13 @@ class ArmBenchDataset(Dataset):
         images = torch.stack(images)
         return images
 
-    def load_sample_images(self, query_id, query=False):
-        # read annotation.json
-        annotation_json = json.load(
-            open(os.path.join(self.query_imgs_paths, self.query_objects_ids[query_id], 'annotation.json'), 'r'))
-        # get object id of pick_id from annotation.json
-        gallery_obj_id = annotation_json['GT_ID']
+    def load_sample_images(self, query_id, query=False, gallery_obj_id=None):
+        if gallery_obj_id is None:
+            # read annotation.json
+            annotation_json = json.load(
+                open(os.path.join(self.query_imgs_paths, self.query_objects_ids[query_id], 'annotation.json'), 'r'))
+            # get object id of pick_id from annotation.json
+            gallery_obj_id = annotation_json['GT_ID']
         gallery_imgs_paths = os.path.join(self.gallery_imgs_paths, gallery_obj_id)
         gallery_imgs = self.load_folder_images(gallery_imgs_paths)
 
@@ -73,9 +74,17 @@ class ArmBenchDataset(Dataset):
             while True:
                 negative_obj_id = random.randint(0, len(self.gallery_objects_list) - 1)
                 negative_obj_id = self.gallery_objects_list[negative_obj_id]
+                # check if negative_obj_id is not empty
+                gallery_imgs_paths = os.path.join(self.gallery_imgs_paths, negative_obj_id)
+                try:
+                    if len(os.listdir(gallery_imgs_paths)) == 0:
+                        continue
+                except:
+                    continue
+                # make sure it is not the same object as positive_obj_id
                 if negative_obj_id != positive_obj_id:
                     break
-            negative_imgs, _ = self.load_sample_images(negative_obj_id, query=False)
+            negative_imgs, _ = self.load_sample_images(negative_obj_id, query=False, gallery_obj_id=negative_obj_id)
             return anchor_imgs, positive_imgs, negative_imgs
         elif self.mode == 'test':
             # load query images
@@ -111,8 +120,13 @@ class ArmBenchDataset(Dataset):
             return query_imgs, gallery_objs_imgs, gallery_objs_local_ids, gallery_objs_names, gallery_matching_id
 
     @staticmethod
-    def collate_fn(batch):
-        return  batch
+    def train_collate_fn(batch):
+        return batch
+
+    @staticmethod
+    def test_collate_fn(batch):
+        return batch
+
 
 def test_armbench(model, device, test_loader, batch_size, epoch):
     print("Evaluating model")
@@ -144,7 +158,7 @@ def test_armbench(model, device, test_loader, batch_size, epoch):
 
             # combine query and gallery together
             all_imgs = torch.cat([batch_query_imgs, batch_gallery_objs_imgs])
-            # runt the model
+            # run the model
             all_embeddings = model(all_imgs)
 
             # separate query and gallery embeddings
