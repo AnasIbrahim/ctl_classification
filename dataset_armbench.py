@@ -11,22 +11,61 @@ from torch.utils.data import Dataset
 from torchvision import transforms as T
 from torchvision.io import read_image
 
+# ===============================================================
+## if set True then a small portion of the dataset will be used
+DEBUG = True
+size = 1000
+# ===============================================================
+
 class ArmBenchDataset(Dataset):
     def __init__(self, training_dir, mode='train'):
         super(ArmBenchDataset, self).__init__()
         self.training_dir = training_dir
-        self.query_imgs_paths = os.path.join(training_dir, 'Picks')
+        self.query_imgs_path = os.path.join(training_dir, 'Picks')
         self.gallery_imgs_paths = os.path.join(training_dir, 'Reference_Images')
         self.mode = mode
         # get images ids for train or test
         train_test_split_data = pickle.load(open(os.path.join(training_dir, 'train-test-split.pickle'), 'rb'))
         if self.mode == 'train':
-            self.query_objects_ids = train_test_split_data['trainset']
-            self.gallery_objects_list = train_test_split_data['trainset-objects']
+            self.query_objs_names_list = train_test_split_data['trainset']
+            self.gallery_objs_names_list = train_test_split_data['trainset-objects']
         elif self.mode == 'test':
-            self.query_objects_ids = train_test_split_data['testset']
-            self.gallery_objects_list = train_test_split_data['testset-objects']
+            self.query_objs_names_list = train_test_split_data['testset']
+            self.gallery_objs_names_list = train_test_split_data['testset-objects']
 
+        # if DEBUG, choose 1000 random samples from train_test_split trainset
+        if DEBUG:
+            self.query_objs_names_list = self.query_objs_names_list[:size]
+
+        # for each query object get associated gallery object and list of object in container
+        self.query_imgs_paths_list = []
+        self.query_associated_gallery_object = []
+        self.query_associated_container_objects = []
+        for query_obj_id in self.query_objs_names_list:
+            # read annotation.json
+            annotation_json = json.load(open(os.path.join(self.query_imgs_path, query_obj_id, 'annotation.json'), 'r'))
+            # get object id of pick_id from annotation.json
+            gallery_obj_id = annotation_json['GT_ID']
+            self.query_associated_gallery_object.append(gallery_obj_id)
+
+            # get object id of all object in pick_id from container.json
+            container_json = json.load(open(os.path.join(self.query_imgs_path, query_obj_id, 'container.json'), 'r'))
+            self.query_associated_container_objects.append(list(container_json.keys()))
+
+            # list images in query the object's folder
+            self.query_imgs_paths_list.append(glob.glob(os.path.join(self.query_imgs_path, query_obj_id) + '/*.jpg'))
+
+        # if DEBUG - use objects associated with query as gallery. This is to test training only
+        if DEBUG:
+            self.gallery_objs_names_list = self.query_associated_gallery_object  # can only test training with this line
+
+        self.gallery_objs_paths_list = {}
+        # get list of images os all gallery objects
+        for gallery_obj_id in self.gallery_objs_names_list:
+            gallery_imgs_paths = os.path.join(self.gallery_imgs_paths, gallery_obj_id)
+            self.gallery_objs_paths_list[gallery_obj_id] = glob.glob(gallery_imgs_paths + '/*.jpg')
+
+        # object transforms
         # load object images
         pixel_mean = [0.485, 0.456, 0.406]
         pixel_std = [0.229, 0.224, 0.225]
@@ -37,95 +76,94 @@ class ArmBenchDataset(Dataset):
         ])
 
     def __len__(self):
-        return len(self.query_objects_ids)  # number of query (picks) in train or test
+        return len(self.query_objs_names_list)  # number of query (picks) in train or test
 
-    def load_folder_images(self, folder_path):
-        images = []
-        for img_path in glob.glob(folder_path + '/*.jpg'):
-            images.append(self.transforms(read_image(img_path).clone().float()))
-        if len(images) == 0:
-            return []
-        # convert images list to tensor
-        images = torch.stack(images)
-        return images
+    def load_images(self, imgs_paths):
+        """
+        method will always return a list of 6 images. Just to be able to stack tensor nicely and run the whole code on GPU
+        """
+        imgs = [self.transforms(read_image(img_path).clone().float()) for img_path in imgs_paths]
+        # make list of images always 6 images
+        if len(imgs) == 1:
+            imgs = imgs * 6
+        elif len(imgs) == 2:
+            imgs = imgs * 3
+        elif len(imgs) == 3:
+            imgs = imgs * 2
+        # NOTE: this will end up shifting the centroid of this object a bit for 4 and 5 images
+        # Still this is crucial for the training to be done efficiently
+        # TODO try training without 4 and 5 and check if this gets a better result
+        elif len(imgs) == 4:
+            # randomly choose 2 images and append them
+            imgs = imgs + random.sample(imgs, 2)
+        elif len(imgs) == 5:
+            # randomly choose 1 image and append it
+            imgs = imgs + random.sample(imgs, 1)
+        # if 6 do nothing
 
-    def load_sample_images(self, query_id, query=False, gallery_obj_id=None):
-        if gallery_obj_id is None:
-            # read annotation.json
-            annotation_json = json.load(
-                open(os.path.join(self.query_imgs_paths, self.query_objects_ids[query_id], 'annotation.json'), 'r'))
-            # get object id of pick_id from annotation.json
-            gallery_obj_id = annotation_json['GT_ID']
-        gallery_imgs_paths = os.path.join(self.gallery_imgs_paths, gallery_obj_id)
-        gallery_imgs = self.load_folder_images(gallery_imgs_paths)
-
-        if not query:
-            return gallery_imgs, gallery_obj_id
-        if query:
-            query_imgs_paths = os.path.join(self.query_imgs_paths, self.query_objects_ids[query_id])
-            query_imgs = self.load_folder_images(query_imgs_paths)
-
-            return query_imgs, gallery_imgs, gallery_obj_id
+        return imgs
 
     def __getitem__(self, query_id):
         if self.mode == 'train':
-            anchor_imgs, positive_imgs, positive_obj_id = self.load_sample_images(query_id, query=True)
+            anchor_imgs = self.load_images(self.query_imgs_paths_list[query_id])
+            positive_obj_id = self.query_associated_gallery_object[query_id]
+            positive_imgs = self.load_images(self.gallery_objs_paths_list[positive_obj_id])
             # choose a random id from obj_ids as negative, make sure negative_obj_id is not the same as positive_obj_id
             while True:
-                negative_obj_id = random.randint(0, len(self.gallery_objects_list) - 1)
-                negative_obj_id = self.gallery_objects_list[negative_obj_id]
+                negative_obj_id = random.randint(0, len(self.gallery_objs_names_list) - 1)
+                negative_obj_id = self.gallery_objs_names_list[negative_obj_id]
                 # check if negative_obj_id is not empty
-                gallery_imgs_paths = os.path.join(self.gallery_imgs_paths, negative_obj_id)
-                try:
-                    if len(os.listdir(gallery_imgs_paths)) == 0:
-                        continue
-                except:
+                if len(self.gallery_objs_paths_list[negative_obj_id]) == 0:
                     continue
                 # make sure it is not the same object as positive_obj_id
                 if negative_obj_id != positive_obj_id:
                     break
-            negative_imgs, _ = self.load_sample_images(negative_obj_id, query=False, gallery_obj_id=negative_obj_id)
+            negative_imgs = self.load_images(self.gallery_objs_paths_list[negative_obj_id])
             return anchor_imgs, positive_imgs, negative_imgs
         elif self.mode == 'test':
             # load query images
-            query_imgs, gallery_imgs, gallery_matching_id = self.load_sample_images(query_id, query=True)
-            # get object id of all object in pick_id from container.json
-            container_json = json.load(
-                open(os.path.join(self.query_imgs_paths, self.query_objects_ids[query_id], 'container.json'), 'r'))
-            container_objs_ids = container_json.keys()
+            query_imgs = self.load_images(self.query_imgs_paths_list[query_id])
+            gallery_matching_obj_name = self.query_associated_gallery_object[query_id]
+            gallery_matching_obj_imgs = self.load_images(self.gallery_imgs_paths[gallery_matching_obj_name])
             # load all images of all objects in pick_id
-            gallery_objs_imgs = [gallery_imgs]  # first object in the gallery is the matching query object
-            gallery_objs_names = [gallery_matching_id]
-            gallery_objs_local_ids = [0] * len(gallery_imgs)
-            obj_local_id = 1  # counting starts from 1, 0 is the matching matching gallery object
-            for obj_name in container_objs_ids:
-                if obj_name == gallery_matching_id:
+            container_objs_imgs = []
+            for container_obj_name in self.query_associated_container_objects[query_id]:
+                if container_obj_name == gallery_matching_obj_name:
                     continue
-                gallery_imgs_paths = os.path.join(self.gallery_imgs_paths, obj_name)
-                this_obj_imgs = self.load_folder_images(gallery_imgs_paths)
-                # check if this_obj_imgs is empty
+                container_obj_imgs_paths = self.gallery_imgs_paths[container_obj_name]
+                # if container object has no images, skip it
                 # TODO check if this is the same for the evaluation in the ArmBench paper
-                if len(this_obj_imgs) == 0:
+                if len(container_obj_imgs_paths) == 0:
                     continue
                 else:
-                    gallery_objs_imgs.append(this_obj_imgs)
-                    gallery_objs_names.append(obj_name)
-                    gallery_objs_local_ids += [obj_local_id] * len(this_obj_imgs)
-                    obj_local_id += 1
-
-            gallery_objs_imgs = torch.cat(gallery_objs_imgs)
-            gallery_objs_local_ids = torch.tensor(gallery_objs_local_ids)
+                    container_obj_imgs = self.load_images(container_obj_imgs_paths)
+                    container_objs_imgs.append(container_obj_imgs)
 
             # Matching gallery object is always the first object in the gallery list
-            return query_imgs, gallery_objs_imgs, gallery_objs_local_ids, gallery_objs_names, gallery_matching_id
+            return query_imgs, gallery_matching_obj_imgs, container_objs_imgs
+            # dimensions: 6, 6, 6*num_of_container_objects
 
     @staticmethod
     def train_collate_fn(batch):
-        return batch
+        all_imgs = []
+        for anchor_imgs, positive_imgs, negative_imgs in batch:
+            for imgs in [anchor_imgs, positive_imgs, negative_imgs]:
+                all_imgs.extend(imgs)
+        # convert list to tensor
+        all_imgs = torch.stack(all_imgs)
+        return all_imgs
 
     @staticmethod
     def test_collate_fn(batch):
-        return batch
+        all_imgs = []
+        num_gallery_objs = []
+        for query_imgs, gallery_matching_obj_imgs, container_objs_imgs in batch:
+            all_imgs.extend([query_imgs + gallery_matching_obj_imgs])
+            all_imgs.extend(container_objs_imgs)
+            num_gallery_objs.append(len(container_objs_imgs)+1)  # matching gallery object + other objects in the container
+        # convert list to tensor
+        all_imgs = torch.stack(all_imgs)
+        return all_imgs, num_gallery_objs
 
 
 def test_armbench(model, device, test_loader, batch_size, epoch):

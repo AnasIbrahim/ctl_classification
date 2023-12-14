@@ -60,68 +60,40 @@ def train(args, model, device, train_loader, optimizer, epoch):
     #criterion = CentroidTripletLoss()
     criterion = nn.TripletMarginLoss(margin=0.1, p=2)
 
-    for batch_idx, batch_data in enumerate(tqdm.tqdm(train_loader)):
-        anchor, positive, negative = [], [], []
-        anchor_ids, positive_ids, negative_ids = [], [], []
-        for sample_id, sample_data in enumerate(batch_data):
-            anchor_img, positive_img, negative_img = sample_data
-            anchor += [anchor_img]
-            positive += [positive_img]
-            negative += [negative_img]
-            anchor_ids += [sample_id] * len(anchor_img)
-            positive_ids += [sample_id] * len(positive_img)
-            negative_ids += [sample_id] * len(negative_img)
-
-        anchor, positive, negative = torch.cat(anchor), torch.cat(positive), torch.cat(negative)
-        anchor_ids, positive_ids, negative_ids = torch.tensor(anchor_ids), torch.tensor(positive_ids), torch.tensor(negative_ids)
-
-        # combine anchor, positive and negative together
-        all_imgs = torch.cat([anchor, positive, negative])
+    for batch_idx, batch_imgs in enumerate(train_loader):
         # run the model
         optimizer.zero_grad()
-        all_embeddings = model(all_imgs)
+        all_embeddings = model(batch_imgs.to(device))
+        # normalize all embeddings
+        # TODO check if this is needed and if query and gallery embeddings should be normalized separately?
+        all_embeddings = torch.nn.functional.normalize(all_embeddings, dim=0, p=2)
+        # reshape tensor to (X,6,3,256,256) to be able to calculate centroids per object
+        feat_dim = all_embeddings.shape[-1]
+        all_embeddings = all_embeddings.reshape((-1, 6, feat_dim))
+        # calculate centroids per object
+        all_embeddings = torch.mean(all_embeddings, dim=1)
+        # reshape tensor to (X,3,3,256,256)
+        all_embeddings = all_embeddings.reshape((-1, 3, feat_dim))
         # separate anchor, positive and negative embeddings
-        anchor_embeddings = all_embeddings[:len(anchor)]
-        positive_embeddings = all_embeddings[len(anchor):len(anchor)+len(positive)]
-        negative_embeddings = all_embeddings[len(anchor)+len(positive):]
-
-        # calculate centroids per sample in each batch
-        anchor_centroids, positive_centroids, negative_centroids = [], [], []
-        for sample_id in range(len(batch_data)):
-            # separate each batch embeddings
-            anchor_embeddings_batch = anchor_embeddings[anchor_ids == sample_id]
-            positive_embeddings_batch = positive_embeddings[positive_ids == sample_id]
-            negative_embeddings_batch = negative_embeddings[negative_ids == sample_id]
-
-            anchor_centroid_batch = torch.mean(anchor_embeddings_batch, dim=0)
-            positive_centroid_batch = torch.mean(positive_embeddings_batch, dim=0)
-            negative_centroid_batch = torch.mean(negative_embeddings_batch, dim=0)
-
-            anchor_centroids += [anchor_centroid_batch]
-            positive_centroids += [positive_centroid_batch]
-            negative_centroids += [negative_centroid_batch]
-
-        anchor_centroids, positive_centroids, negative_centroids = torch.stack(anchor_centroids), torch.stack(positive_centroids), torch.stack(negative_centroids)
-
+        anchor_centroids = all_embeddings[:, 0]
+        positive_centroids = all_embeddings[:, 1]
+        negative_centroids = all_embeddings[:, 2]
         # calculate loss
         loss = criterion(anchor_centroids, positive_centroids, negative_centroids)
-
         loss.backward()
 
-    optimizer.step()
+        optimizer.step()
 
-    log_interval = 50
-    if batch_idx % log_interval == 0:
         print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
             epoch,
-            batch_idx, len(train_loader.dataset),
-            100. * batch_idx / len(train_loader.dataset), loss.item()))
+            batch_idx, int(len(train_loader.dataset)/args.train_batch_size),
+            100. * batch_idx / int(len(train_loader.dataset) / args.train_batch_size), loss.item()))
 
 
 def main():
     # Training settings
     parser = argparse.ArgumentParser(description='Train backbones for object classification (reidentification) using centroid loss using ArmBench dataset')
-    parser.add_argument('--train-batch-size', type=int, default=4, metavar='N',
+    parser.add_argument('--train-batch-size', type=int, default=3, metavar='N',
                         help='input batch size for training (= number of objects used in one training step) (default: 64)')
     parser.add_argument('--armbench-test-batch-size', type=int, default=12, metavar='N',
                         help='input batch size for testing (= number of objects used in one testing step)')
@@ -165,7 +137,7 @@ def main():
     model = nn.DataParallel(model)
     print("Model created")
 
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.0003)
     scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
 
     # Run test before training
