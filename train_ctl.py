@@ -68,16 +68,19 @@ def train(args, model, device, train_loader, optimizer, epoch):
         # TODO check if this is needed and if query and gallery embeddings should be normalized separately?
         all_embeddings = torch.nn.functional.normalize(all_embeddings, dim=0, p=2)
         # reshape tensor to (X,6,3,256,256) to be able to calculate centroids per object
+        # view must be used instead of reshape
         feat_dim = all_embeddings.shape[-1]
-        all_embeddings = all_embeddings.reshape((-1, 6, feat_dim))
+        all_embeddings = all_embeddings.view((-1, 6, feat_dim))
         # calculate centroids per object
-        all_embeddings = torch.mean(all_embeddings, dim=1)
+        # TODO should EmbeddingBag be used instead of mean?
+        all_centroids = torch.mean(all_embeddings, dim=1)
         # reshape tensor to (X,3,3,256,256)
-        all_embeddings = all_embeddings.reshape((-1, 3, feat_dim))
+        # view must be used instead of reshape
+        all_centroids = all_centroids.view((-1, 3, feat_dim))
         # separate anchor, positive and negative embeddings
-        anchor_centroids = all_embeddings[:, 0]
-        positive_centroids = all_embeddings[:, 1]
-        negative_centroids = all_embeddings[:, 2]
+        anchor_centroids = all_centroids[:, 0]
+        positive_centroids = all_centroids[:, 1]
+        negative_centroids = all_centroids[:, 2]
         # calculate loss
         loss = criterion(anchor_centroids, positive_centroids, negative_centroids)
         loss.backward()
@@ -95,7 +98,7 @@ def main():
     parser = argparse.ArgumentParser(description='Train backbones for object classification (reidentification) using centroid loss using ArmBench dataset')
     parser.add_argument('--train-batch-size', type=int, default=3, metavar='N',
                         help='input batch size for training (= number of objects used in one training step) (default: 64)')
-    parser.add_argument('--armbench-test-batch-size', type=int, default=12, metavar='N',
+    parser.add_argument('--armbench-test-batch-size', type=int, default=4, metavar='N',
                         help='input batch size for testing (= number of objects used in one testing step)')
     parser.add_argument('--epochs', type=int, default=50, metavar='N',
                         help='number of epochs to train')

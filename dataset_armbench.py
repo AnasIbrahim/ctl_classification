@@ -34,8 +34,8 @@ class ArmBenchDataset(Dataset):
             self.gallery_objs_names_list = train_test_split_data['testset-objects']
 
         # if DEBUG, choose 1000 random samples from train_test_split trainset
-        if DEBUG:
-            self.query_objs_names_list = self.query_objs_names_list[:size]
+        #if DEBUG:
+        #    self.query_objs_names_list = self.query_objs_names_list[:size]
 
         # for each query object get associated gallery object and list of object in container
         self.query_imgs_paths_list = []
@@ -56,8 +56,8 @@ class ArmBenchDataset(Dataset):
             self.query_imgs_paths_list.append(glob.glob(os.path.join(self.query_imgs_path, query_obj_id) + '/*.jpg'))
 
         # if DEBUG - use objects associated with query as gallery. This is to test training only
-        if DEBUG:
-            self.gallery_objs_names_list = self.query_associated_gallery_object  # can only test training with this line
+        #if DEBUG:
+        #    self.gallery_objs_names_list = self.query_associated_gallery_object  # can only test training with this line
 
         self.gallery_objs_paths_list = {}
         # get list of images os all gallery objects
@@ -124,13 +124,13 @@ class ArmBenchDataset(Dataset):
             # load query images
             query_imgs = self.load_images(self.query_imgs_paths_list[query_id])
             gallery_matching_obj_name = self.query_associated_gallery_object[query_id]
-            gallery_matching_obj_imgs = self.load_images(self.gallery_imgs_paths[gallery_matching_obj_name])
+            gallery_matching_obj_imgs = self.load_images(self.gallery_objs_paths_list[gallery_matching_obj_name])
             # load all images of all objects in pick_id
             container_objs_imgs = []
             for container_obj_name in self.query_associated_container_objects[query_id]:
                 if container_obj_name == gallery_matching_obj_name:
                     continue
-                container_obj_imgs_paths = self.gallery_imgs_paths[container_obj_name]
+                container_obj_imgs_paths = self.gallery_objs_paths_list[container_obj_name]
                 # if container object has no images, skip it
                 # TODO check if this is the same for the evaluation in the ArmBench paper
                 if len(container_obj_imgs_paths) == 0:
@@ -158,8 +158,10 @@ class ArmBenchDataset(Dataset):
         all_imgs = []
         num_gallery_objs = []
         for query_imgs, gallery_matching_obj_imgs, container_objs_imgs in batch:
-            all_imgs.extend([query_imgs + gallery_matching_obj_imgs])
-            all_imgs.extend(container_objs_imgs)
+            all_imgs.extend(query_imgs)
+            all_imgs.extend(gallery_matching_obj_imgs)
+            for container_obj_imgs in container_objs_imgs:
+                all_imgs.extend(container_obj_imgs)
             num_gallery_objs.append(len(container_objs_imgs)+1)  # matching gallery object + other objects in the container
         # convert list to tensor
         all_imgs = torch.stack(all_imgs)
@@ -177,66 +179,37 @@ def test_armbench(model, device, test_loader, batch_size, epoch):
     rank_1, rank_2, rank_3 = [], [], []
 
     with torch.no_grad():
-        for batches_data in tqdm.tqdm(test_loader):
-            # combine query and gallery images from all samples in the batch and presrve the ids
-            batch_query_imgs, batch_gallery_objs_imgs = [], []
-            batch_query_ids, batch_gallery_ids = [], []
-            for batch_id, batch_data in enumerate(batches_data):
-                query_imgs, gallery_objs_imgs, gallery_objs_local_ids, gallery_objs_names, gallery_matching_id = batch_data
-                query_imgs, gallery_objs_imgs = query_imgs.to(device), gallery_objs_imgs.to(device)
-                batch_query_imgs += [query_imgs]
-                batch_gallery_objs_imgs += [gallery_objs_imgs]
-                batch_query_ids += [batch_id] * len(query_imgs)
-                batch_gallery_ids += [batch_id] * len(gallery_objs_imgs)
-
-            batch_query_imgs = torch.cat(batch_query_imgs)
-            batch_gallery_objs_imgs = torch.cat(batch_gallery_objs_imgs)
-            batch_query_ids = torch.tensor(batch_query_ids)
-            batch_gallery_ids = torch.tensor(batch_gallery_ids)
-
-            # combine query and gallery together
-            all_imgs = torch.cat([batch_query_imgs, batch_gallery_objs_imgs])
+        for (all_imgs, num_gallery_objs) in tqdm.tqdm(test_loader):
             # run the model
             all_embeddings = model(all_imgs)
-
-            # separate query and gallery embeddings
-            batch_query_embeddings = all_embeddings[:len(batch_query_imgs)]
-            batch_gallery_obj_embeddings = all_embeddings[len(batch_query_imgs):]
-
             # normalize embeddings
-            # TODO should we normalize the query and gallery embeddings together?
-            batch_query_embeddings = torch.nn.functional.normalize(batch_query_embeddings, dim=1, p=2)
-            batch_gallery_obj_embeddings = torch.nn.functional.normalize(batch_gallery_obj_embeddings, dim=1, p=2)
+            # TODO check if this is needed and if query and gallery embeddings should be normalized separately?
+            all_embeddings = torch.nn.functional.normalize(all_embeddings, dim=0, p=2)
+            # reshape tensor to (X,6,3,256,256) to be able to calculate centroids per object
+            feat_dim = all_embeddings.shape[-1]
+            all_embeddings = all_embeddings.reshape((-1, 6, feat_dim))
+            # calculate centroids per object
+            all_centroids = torch.mean(all_embeddings, dim=1)
 
-            for batch_id, batch_data in enumerate(batches_data):
-                _, _, gallery_objs_local_ids, gallery_objs_names, gallery_matching_id = batch_data
-                # separate each batch embeddings
-                query_embeddings = batch_query_embeddings[batch_query_ids == batch_id]
-                gallery_obj_embeddings = batch_gallery_obj_embeddings[batch_gallery_ids == batch_id]
+            # iterate over each query object (batch size)
+            for i in range(batch_size):
+                # get query object embeddings
+                query_centroid = all_centroids[i]
+                # get gallery objects embeddings
+                gallery_centroids = all_centroids[i+1:i+num_gallery_objs[i]]
 
-                # calculate centroids
-                query_centroid = torch.mean(query_embeddings, dim=0)
-                # calculate centroids for each gallery object
-                gallery_objs_centroids = []
-                for i in range(len(gallery_objs_names)):
-                    this_obj_gallery_embeddings = gallery_obj_embeddings[gallery_objs_local_ids == i]
-                    this_obj_gallery_centroid = torch.mean(this_obj_gallery_embeddings, dim=0)
-                    gallery_objs_centroids.append(this_obj_gallery_centroid)
-                gallery_objs_centroids = torch.stack(gallery_objs_centroids)
-
-                # calculate distances between gallery centroid and query objects centroids
-                dist_matrix = torch.nn.functional.cosine_similarity(query_centroid.unsqueeze(0), gallery_objs_centroids, dim=1)
+                # calculate distances between query and gallery objects centroids
+                dist_matrix = torch.nn.functional.cosine_similarity(query_centroid.unsqueeze(0), gallery_centroids, dim=1)
                 dist_matrix = 1 - dist_matrix
                 dist_matrix = dist_matrix.cpu().numpy()
 
                 # sort closest objects
                 top_ids = np.argsort(dist_matrix)
-                # get object ids of the closest objects
-                top_ids = [gallery_objs_names[i] for i in top_ids]
-                # get rankings
-                rank_1 += [1] if gallery_matching_id in top_ids[:1] else [0]
-                rank_2 += [1] if gallery_matching_id in top_ids[:2] else [0]
-                rank_3 += [1] if gallery_matching_id in top_ids[:3] else [0]
+
+                # get rankings - find if index 0 (matching object) is in rank 1, 2 or 3
+                rank_1 += [1] if 0 in top_ids[:1] else [0]
+                rank_2 += [1] if 0 in top_ids[:2] else [0]
+                rank_3 += [1] if 0 in top_ids[:3] else [0]
 
     # calculate CMC metrics
     rank_1, rank_2, rank_3 = np.mean(rank_1), np.mean(rank_2), np.mean(rank_3)
