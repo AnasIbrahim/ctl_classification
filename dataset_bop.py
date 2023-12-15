@@ -68,7 +68,7 @@ class BOPDataset(Dataset):
         return query_imgs, query_ids, gallery_imgs, gallery_ids
 
 
-def test_bop(model, device, test_loader, batch_size, epoch):
+def test_bop(model, test_loader, batch_size):
     print("Evaluating on BOP dataset")
     model.eval()
 

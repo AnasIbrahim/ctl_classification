@@ -11,14 +11,8 @@ from torch.utils.data import Dataset
 from torchvision import transforms as T
 from torchvision.io import read_image
 
-# ===============================================================
-## if set True then a small portion of the dataset will be used
-DEBUG = True
-size = 1000
-# ===============================================================
-
 class ArmBenchDataset(Dataset):
-    def __init__(self, training_dir, mode='train'):
+    def __init__(self, training_dir, mode='train', portion=None):
         super(ArmBenchDataset, self).__init__()
         self.training_dir = training_dir
         self.query_imgs_path = os.path.join(training_dir, 'Picks')
@@ -33,9 +27,9 @@ class ArmBenchDataset(Dataset):
             self.query_objs_names_list = train_test_split_data['testset']
             self.gallery_objs_names_list = train_test_split_data['testset-objects']
 
-        # if DEBUG, choose 1000 random samples from train_test_split trainset
-        #if DEBUG:
-        #    self.query_objs_names_list = self.query_objs_names_list[:size]
+        # if portion is set, use only a small portion of the dataset
+        if portion:
+            self.query_objs_names_list = self.query_objs_names_list[:portion]
 
         # for each query object get associated gallery object and list of object in container
         self.query_imgs_paths_list = []
@@ -55,8 +49,8 @@ class ArmBenchDataset(Dataset):
             # list images in query the object's folder
             self.query_imgs_paths_list.append(glob.glob(os.path.join(self.query_imgs_path, query_obj_id) + '/*.jpg'))
 
-        # if DEBUG - use objects associated with query as gallery. This is to test training only
-        #if DEBUG:
+        # if portions set - use objects associated with query as gallery. This is to test training only
+        #if portion:
         #    self.gallery_objs_names_list = self.query_associated_gallery_object  # can only test training with this line
 
         self.gallery_objs_paths_list = {}
@@ -168,8 +162,7 @@ class ArmBenchDataset(Dataset):
         return all_imgs, num_gallery_objs
 
 
-def test_armbench(model, device, test_loader, batch_size, epoch):
-    print("Evaluating model")
+def test_armbench(model, test_loader):
     model.eval()
 
     test_loss = 0

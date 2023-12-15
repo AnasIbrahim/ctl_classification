@@ -52,7 +52,8 @@ class CTLModel(nn.Module):
 #        return loss
 
 
-def train(args, model, device, train_loader, optimizer, epoch):
+def train(model, device, train_loader, optimizer, epoch):
+    print("Training epoch: " + str(epoch))
     model.train()
     for p in model.module.parameters():
         p.requires_grad = True
@@ -94,39 +95,37 @@ def train(args, model, device, train_loader, optimizer, epoch):
 
 
 def main():
-    # Training settings
-    parser = argparse.ArgumentParser(description='Train backbones for object classification (reidentification) using centroid loss using ArmBench dataset')
-    parser.add_argument('--train-batch-size', type=int, default=3, metavar='N',
-                        help='input batch size for training (= number of objects used in one training step) (default: 64)')
-    parser.add_argument('--armbench-test-batch-size', type=int, default=3, metavar='N',
-                        help='input batch size for testing (= number of objects used in one testing step)')
-    parser.add_argument('--epochs', type=int, default=50, metavar='N',
-                        help='number of epochs to train')
-    parser.add_argument('--seed', type=int, default=1, metavar='S',
-                        help='random seed (default: 1 for reproducibility)')
-    parser.add_argument('--save-path', action='store_true', default=False,
-                        help='For Saving the log and the models')
-    args = parser.parse_args()
+    armbench_train_batch_size = 3
+    armbench_test_batch_size = 3
+    bop_test_batch_size = 150
+    epochs = 10
+    seed = 1
 
     armbench_dataset_path = '/media/gouda/ssd_data/datasets/armbench-object-id-0.1'
     hope_dataset_path = '/media/gouda/ssd_data/datasets/hope/classification'
     output_path = '/home/gouda/segmentation/ctl_training_output/gouda/train_1'
     
-    torch.manual_seed(args.seed)
-
-    device = torch.device("cuda")
-
-    train_kwargs = {'batch_size': args.train_batch_size,
+    train_kwargs = {'batch_size': armbench_train_batch_size,
                     'shuffle': False}  # TODO change to True
-    test_kwargs = {'batch_size': args.armbench_test_batch_size,
+    test_kwargs = {'batch_size': armbench_test_batch_size,
                    'shuffle': False}
     cuda_kwargs = {'num_workers': 4,
                    'pin_memory': True}
     train_kwargs.update(cuda_kwargs)
     test_kwargs.update(cuda_kwargs)
 
-    armbench_train_dataset = ArmBenchDataset(armbench_dataset_path, mode='train')
-    armbench_test_dataset = ArmBenchDataset(armbench_dataset_path, mode='test')
+    lr = 0.001
+    step_size = 3
+    gamma = 0.1
+
+    torch.manual_seed(seed)
+    device = torch.device("cuda")
+
+    if not os.path.exists(os.path.join(output_path, 'models')):
+        os.makedirs(os.path.join(output_path, 'models'))
+
+    armbench_train_dataset = ArmBenchDataset(armbench_dataset_path, mode='train', portion=100)
+    armbench_test_dataset = ArmBenchDataset(armbench_dataset_path, mode='test', portion=100)
     bop_test_dataset = BOPDataset(hope_dataset_path)
     armbench_train_loader = torch.utils.data.DataLoader(armbench_train_dataset, collate_fn=ArmBenchDataset.train_collate_fn, **train_kwargs)
     armbench_test_loader = torch.utils.data.DataLoader(armbench_test_dataset, collate_fn=ArmBenchDataset.test_collate_fn, **test_kwargs)
@@ -140,26 +139,27 @@ def main():
     model = nn.DataParallel(model)
     print("Model created")
 
-    optimizer = optim.Adam(model.parameters(), lr=0.0003)
-    scheduler = StepLR(optimizer, step_size=5, gamma=0.1)
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    # scheduler lowers LR by a factor of 10 every 3 epochs
+    scheduler = StepLR(optimizer, step_size=step_size, gamma=gamma)
 
     # Run test before training
-    test_bop(model, device, bop_test_loader, batch_size=150, epoch=0)
-    test_armbench(model, device, armbench_test_loader, args.armbench_test_batch_size, 0)
+    test_bop(model, bop_test_loader, batch_size=bop_test_batch_size)
+    test_armbench(model, armbench_test_loader)
 
     start_time = datetime.datetime.now()
 
-    for epoch in range(1, args.epochs + 1):
-        train(args, model, device, armbench_train_loader, optimizer, epoch)
-        test_bop(model, device, bop_test_loader, batch_size=150, epoch=0)
-        test_armbench(model, device, armbench_test_loader, args.armbench_test_batch_size, 0)
+    for epoch in range(1, epochs + 1):
+        train(model, device, armbench_train_loader, optimizer, epoch)
+        test_bop(model, bop_test_loader, batch_size=bop_test_batch_size)
+        test_armbench(model, armbench_test_loader)
         scheduler.step()
 
         print("Epoch Time:")
         print(datetime.datetime.now() - start_time)
         start_time = datetime.datetime.now()
 
-        torch.save(model.state_dict(), os.path.join(output_path, 'models', 'epoch-'+ str(epoch) + ".pt"))
+        torch.save(model.state_dict(), os.path.join(output_path, 'models', 'epoch-'+str(epoch) + ".pt"))
 
 
 if __name__ == '__main__':
