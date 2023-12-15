@@ -60,7 +60,7 @@ def train(args, model, device, train_loader, optimizer, epoch):
     #criterion = CentroidTripletLoss()
     criterion = nn.TripletMarginLoss(margin=0.1, p=2)
 
-    for batch_idx, batch_imgs in enumerate(train_loader):
+    for batch_idx, batch_imgs in enumerate(tqdm.tqdm(train_loader)):
         # run the model
         optimizer.zero_grad()
         all_embeddings = model(batch_imgs.to(device))
@@ -87,10 +87,10 @@ def train(args, model, device, train_loader, optimizer, epoch):
 
         optimizer.step()
 
-        print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-            epoch,
-            batch_idx, int(len(train_loader.dataset)/args.train_batch_size),
-            100. * batch_idx / int(len(train_loader.dataset) / args.train_batch_size), loss.item()))
+        #print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+        #    epoch,
+        #    batch_idx, int(len(train_loader.dataset)/args.train_batch_size),
+        #    100. * batch_idx / int(len(train_loader.dataset) / args.train_batch_size), loss.item()))
 
 
 def main():
@@ -98,7 +98,7 @@ def main():
     parser = argparse.ArgumentParser(description='Train backbones for object classification (reidentification) using centroid loss using ArmBench dataset')
     parser.add_argument('--train-batch-size', type=int, default=3, metavar='N',
                         help='input batch size for training (= number of objects used in one training step) (default: 64)')
-    parser.add_argument('--armbench-test-batch-size', type=int, default=4, metavar='N',
+    parser.add_argument('--armbench-test-batch-size', type=int, default=3, metavar='N',
                         help='input batch size for testing (= number of objects used in one testing step)')
     parser.add_argument('--epochs', type=int, default=50, metavar='N',
                         help='number of epochs to train')

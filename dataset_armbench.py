@@ -185,18 +185,22 @@ def test_armbench(model, device, test_loader, batch_size, epoch):
             # normalize embeddings
             # TODO check if this is needed and if query and gallery embeddings should be normalized separately?
             all_embeddings = torch.nn.functional.normalize(all_embeddings, dim=0, p=2)
-            # reshape tensor to (X,6,3,256,256) to be able to calculate centroids per object
+            # reshape tensor to (X,6,feat_dim) to be able to calculate centroids per object
+            # view must be used instead of reshape
             feat_dim = all_embeddings.shape[-1]
-            all_embeddings = all_embeddings.reshape((-1, 6, feat_dim))
+            all_embeddings = all_embeddings.view((-1, 6, feat_dim))
             # calculate centroids per object
             all_centroids = torch.mean(all_embeddings, dim=1)
 
             # iterate over each query object (batch size)
-            for i in range(batch_size):
+            query_id = 0
+            for i in range(len(num_gallery_objs)):  # use len(num_gallery_objs) instead of batch_size to handle last batch
                 # get query object embeddings
-                query_centroid = all_centroids[i]
+                query_centroid = all_centroids[query_id]
                 # get gallery objects embeddings
-                gallery_centroids = all_centroids[i+1:i+num_gallery_objs[i]]
+                gallery_centroids = all_centroids[query_id+1:query_id+num_gallery_objs[i]+1]
+                # increment query_id for next iteration
+                query_id += num_gallery_objs[i] + 1
 
                 # calculate distances between query and gallery objects centroids
                 dist_matrix = torch.nn.functional.cosine_similarity(query_centroid.unsqueeze(0), gallery_centroids, dim=1)
