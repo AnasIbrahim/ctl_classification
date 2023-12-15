@@ -12,52 +12,60 @@ from torchvision import transforms as T
 from torchvision.io import read_image
 
 class ArmBenchDataset(Dataset):
-    def __init__(self, training_dir, mode='train', portion=None):
+    def __init__(self, training_dir, mode='train', portion=None, saved_processed_data_file=None):
         super(ArmBenchDataset, self).__init__()
-        self.training_dir = training_dir
-        self.query_imgs_path = os.path.join(training_dir, 'Picks')
-        self.gallery_imgs_paths = os.path.join(training_dir, 'Reference_Images')
         self.mode = mode
-        # get images ids for train or test
-        train_test_split_data = pickle.load(open(os.path.join(training_dir, 'train-test-split.pickle'), 'rb'))
-        if self.mode == 'train':
-            self.query_objs_names_list = train_test_split_data['trainset']
-            self.gallery_objs_names_list = train_test_split_data['trainset-objects']
-        elif self.mode == 'test':
-            self.query_objs_names_list = train_test_split_data['testset']
-            self.gallery_objs_names_list = train_test_split_data['testset-objects']
+        self.portion = portion
+        # check if saved_processed_data_file equals None
+        if saved_processed_data_file:
+            # load processed data from pickle file
+            processed_data = pickle.load(open(saved_processed_data_file, 'rb'))
+            self.query_imgs_paths_list = processed_data['query_imgs_paths_list']
+            self.query_associated_gallery_object = processed_data['query_associated_gallery_object']
+            self.query_associated_container_objects = processed_data['query_associated_container_objects']
+            self.gallery_objs_paths_list = processed_data['gallery_objs_paths_list']
+            self.query_objs_names_list = processed_data['query_objs_names_list']
+            self.gallery_objs_names_list = processed_data['gallery_objs_names_list']
+        else:
+            self.training_dir = training_dir
+            self.query_imgs_path = os.path.join(training_dir, 'Picks')
+            self.gallery_imgs_paths = os.path.join(training_dir, 'Reference_Images')
+            # get images ids for train or test
+            train_test_split_data = pickle.load(open(os.path.join(training_dir, 'train-test-split.pickle'), 'rb'))
+            if self.mode == 'train':
+                self.query_objs_names_list = train_test_split_data['trainset']
+                self.gallery_objs_names_list = train_test_split_data['trainset-objects']
+            elif self.mode == 'test':
+                self.query_objs_names_list = train_test_split_data['testset']
+                self.gallery_objs_names_list = train_test_split_data['testset-objects']
 
-        # if portion is set, use only a small portion of the dataset
-        if portion:
-            self.query_objs_names_list = self.query_objs_names_list[:portion]
+            # if portion is set, use only a small portion of the dataset
+            #if portion:
+            #    self.query_objs_names_list = self.query_objs_names_list[:portion]
 
-        # for each query object get associated gallery object and list of object in container
-        self.query_imgs_paths_list = []
-        self.query_associated_gallery_object = []
-        self.query_associated_container_objects = []
-        for query_obj_id in self.query_objs_names_list:
-            # read annotation.json
-            annotation_json = json.load(open(os.path.join(self.query_imgs_path, query_obj_id, 'annotation.json'), 'r'))
-            # get object id of pick_id from annotation.json
-            gallery_obj_id = annotation_json['GT_ID']
-            self.query_associated_gallery_object.append(gallery_obj_id)
+            # for each query object get associated gallery object and list of object in container
+            self.query_imgs_paths_list = []
+            self.query_associated_gallery_object = []
+            self.query_associated_container_objects = []
+            for query_obj_id in self.query_objs_names_list:
+                # read annotation.json
+                annotation_json = json.load(open(os.path.join(self.query_imgs_path, query_obj_id, 'annotation.json'), 'r'))
+                # get object id of pick_id from annotation.json
+                gallery_obj_id = annotation_json['GT_ID']
+                self.query_associated_gallery_object.append(gallery_obj_id)
 
-            # get object id of all object in pick_id from container.json
-            container_json = json.load(open(os.path.join(self.query_imgs_path, query_obj_id, 'container.json'), 'r'))
-            self.query_associated_container_objects.append(list(container_json.keys()))
+                # get object id of all object in pick_id from container.json
+                container_json = json.load(open(os.path.join(self.query_imgs_path, query_obj_id, 'container.json'), 'r'))
+                self.query_associated_container_objects.append(list(container_json.keys()))
 
-            # list images in query the object's folder
-            self.query_imgs_paths_list.append(glob.glob(os.path.join(self.query_imgs_path, query_obj_id) + '/*.jpg'))
+                # list images in query the object's folder
+                self.query_imgs_paths_list.append(glob.glob(os.path.join(self.query_imgs_path, query_obj_id) + '/*.jpg'))
 
-        # if portions set - use objects associated with query as gallery. This is to test training only
-        #if portion:
-        #    self.gallery_objs_names_list = self.query_associated_gallery_object  # can only test training with this line
-
-        self.gallery_objs_paths_list = {}
-        # get list of images os all gallery objects
-        for gallery_obj_id in self.gallery_objs_names_list:
-            gallery_imgs_paths = os.path.join(self.gallery_imgs_paths, gallery_obj_id)
-            self.gallery_objs_paths_list[gallery_obj_id] = glob.glob(gallery_imgs_paths + '/*.jpg')
+            self.gallery_objs_paths_list = {}
+            # get list of images os all gallery objects
+            for gallery_obj_id in self.gallery_objs_names_list:
+                gallery_imgs_paths = os.path.join(self.gallery_imgs_paths, gallery_obj_id)
+                self.gallery_objs_paths_list[gallery_obj_id] = glob.glob(gallery_imgs_paths + '/*.jpg')
 
         # object transforms
         # load object images
@@ -69,8 +77,21 @@ class ArmBenchDataset(Dataset):
             T.Resize(image_size)
         ])
 
+    def save_processed_data(self, processed_pickle_file_path):
+        pickle.dump({
+            'query_imgs_paths_list': self.query_imgs_paths_list,
+            'query_associated_gallery_object': self.query_associated_gallery_object,
+            'query_associated_container_objects': self.query_associated_container_objects,
+            'gallery_objs_paths_list': self.gallery_objs_paths_list,
+            'query_objs_names_list': self.query_objs_names_list,
+            'gallery_objs_names_list': self.gallery_objs_names_list
+        }, open(processed_pickle_file_path, 'wb'))
+
     def __len__(self):
-        return len(self.query_objs_names_list)  # number of query (picks) in train or test
+        if self.portion:
+            return self.portion
+        else:
+            return len(self.query_objs_names_list)  # number of query (picks) in train or test
 
     def load_images(self, imgs_paths):
         """
@@ -162,7 +183,7 @@ class ArmBenchDataset(Dataset):
         return all_imgs, num_gallery_objs
 
 
-def test_armbench(model, test_loader):
+def test_armbench(model, test_loader, writer, epoch):
     model.eval()
 
     test_loss = 0
@@ -213,3 +234,7 @@ def test_armbench(model, test_loader):
     print("Rank 1: ", rank_1)
     print("Rank 2: ", rank_2)
     print("Rank 3: ", rank_3)
+
+    writer.add_scalar('ArmBench/Test/rank1', rank_1, epoch)
+    writer.add_scalar('ArmBench/Test/rank2', rank_2, epoch)
+    writer.add_scalar('ArmBench/Test/rank3', rank_3, epoch)

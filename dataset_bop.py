@@ -68,7 +68,7 @@ class BOPDataset(Dataset):
         return query_imgs, query_ids, gallery_imgs, gallery_ids
 
 
-def test_bop(model, test_loader, batch_size):
+def test_bop(model, test_loader, batch_size, writer, epoch):
     print("Evaluating on BOP dataset")
     model.eval()
 
@@ -130,6 +130,9 @@ def test_bop(model, test_loader, batch_size):
     rank_5 = np.mean(rank_5)
     print("Rank 1: ", rank_1)
     print("Rank 5: ", rank_5)
+
+    writer.add_scalar('HOPE/NonCentroid/rank_1', rank_1, epoch)
+    writer.add_scalar('HOPE/NonCentroid/rank_5', rank_5, epoch)
     # =============================================================================
 
     # =============================================================================
@@ -183,4 +186,6 @@ def test_bop(model, test_loader, batch_size):
     rank_5 = np.mean(rank_5)
     print("Rank 1: ", rank_1)
     print("Rank 5: ", rank_5)
+    writer.add_scalar('HOPE/Centroid/rank_1', rank_1, epoch)
+    writer.add_scalar('HOPE/Centroid/rank_5', rank_5, epoch)
     # =============================================================================
