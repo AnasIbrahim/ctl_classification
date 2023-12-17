@@ -79,46 +79,46 @@ def train(model, device, train_loader, optimizer, writer, epoch):
 
 
 def main():
-    armbench_train_batch_size = 3
-    armbench_test_batch_size = 3
-    bop_test_batch_size = 150
-    epochs = 10
-    seed = 1
+    armbench_train_batch_size = 40
+    armbench_test_batch_size = 20
+    bop_test_batch_size = 500
+    epochs = 15
+    #seed = 1
 
-    armbench_dataset_path = '/media/gouda/ssd_data/datasets/armbench-object-id-0.1'
-    armbench_processed_data_file_train = '/home/gouda/segmentation/obj_identification_cts/processed_armbench_dataset_train.pickle'
-    armbench_processed_data_file_test = '/home/gouda/segmentation/obj_identification_cts/processed_armbench_dataset_test.pickle'
-    hope_dataset_path = '/media/gouda/ssd_data/datasets/hope/classification'
-    output_path = '/home/gouda/segmentation/ctl_training_output/gouda/train_1'
+    armbench_dataset_path = '/raid/datasets/armbench-object-id-0.1'
+    armbench_processed_data_file_train = '/home/gouda/segmentation/ctl_classification/processed_armbench_dataset_train.pickle'
+    armbench_processed_data_file_test =  '/home/gouda/segmentation/ctl_classification/processed_armbench_dataset_test.pickle'
+    hope_dataset_path = '/raid/datasets/hope/classification'
+    output_path = '/home/gouda/segmentation/scratch_training_output/train_1'
     
     train_kwargs = {'batch_size': armbench_train_batch_size,
                     'shuffle': True}
     test_kwargs = {'batch_size': armbench_test_batch_size,
                    'shuffle': False}
-    cuda_kwargs = {'num_workers': 4,
+    cuda_kwargs = {'num_workers': 8,
                    'pin_memory': True}
     train_kwargs.update(cuda_kwargs)
     test_kwargs.update(cuda_kwargs)
 
     lr = 0.001
-    step_size = 3
+    step_size = 5
     gamma = 0.1
 
-    torch.manual_seed(seed)
+    #torch.manual_seed(seed)
     device = torch.device("cuda")
 
     if not os.path.exists(os.path.join(output_path, 'models')):
         os.makedirs(os.path.join(output_path, 'models'))
 
     # uncomment next paragraph to save processed data
-    #armbench_train_dataset = ArmBenchDataset(armbench_dataset_path, mode='train', portion=10, saved_processed_data_file=None)
-    #armbench_test_dataset = ArmBenchDataset(armbench_dataset_path, mode='test', portion=10, saved_processed_data_file=None)
+    #armbench_train_dataset = ArmBenchDataset(armbench_dataset_path, mode='train', portion=None, saved_processed_data_file=None)
+    #armbench_test_dataset = ArmBenchDataset(armbench_dataset_path, mode='test', portion=None, saved_processed_data_file=None)
     #armbench_train_dataset.save_processed_data(armbench_processed_data_file_train)
     #armbench_test_dataset.save_processed_data(armbench_processed_data_file_test)
     #exit()
 
-    armbench_train_dataset = ArmBenchDataset(armbench_dataset_path, mode='train', portion=10, saved_processed_data_file=armbench_processed_data_file_train)
-    armbench_test_dataset = ArmBenchDataset(armbench_dataset_path, mode='test', portion=10, saved_processed_data_file=armbench_processed_data_file_test)
+    armbench_train_dataset = ArmBenchDataset(armbench_dataset_path, mode='train', portion=None, saved_processed_data_file=armbench_processed_data_file_train)
+    armbench_test_dataset = ArmBenchDataset(armbench_dataset_path, mode='test', portion=None, saved_processed_data_file=armbench_processed_data_file_test)
 
     bop_test_dataset = BOPDataset(hope_dataset_path)
     armbench_train_loader = torch.utils.data.DataLoader(armbench_train_dataset, collate_fn=ArmBenchDataset.train_collate_fn, **train_kwargs)

@@ -123,6 +123,9 @@ class ArmBenchDataset(Dataset):
             anchor_imgs = self.load_images(self.query_imgs_paths_list[query_id])
             positive_obj_id = self.query_associated_gallery_object[query_id]
             positive_imgs = self.load_images(self.gallery_objs_paths_list[positive_obj_id])
+            # if positive object has no images, return None
+            if len(positive_imgs) == 0:
+                return None
             # choose a random id from obj_ids as negative, make sure negative_obj_id is not the same as positive_obj_id
             while True:
                 negative_obj_id = random.randint(0, len(self.gallery_objs_names_list) - 1)
@@ -161,7 +164,11 @@ class ArmBenchDataset(Dataset):
     @staticmethod
     def train_collate_fn(batch):
         all_imgs = []
-        for anchor_imgs, positive_imgs, negative_imgs in batch:
+        for batch_data in batch:
+            # if batch_data is None, skip it
+            if batch_data is None:
+                continue
+            anchor_imgs, positive_imgs, negative_imgs = batch_data
             for imgs in [anchor_imgs, positive_imgs, negative_imgs]:
                 all_imgs.extend(imgs)
         # convert list to tensor
