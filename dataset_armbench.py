@@ -5,11 +5,11 @@ import pickle
 import json
 import tqdm
 import numpy as np
+from PIL import Image
 
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms as T
-from torchvision.io import read_image
 
 class ArmBenchDataset(Dataset):
     def __init__(self, training_dir, mode='train', portion=None, saved_processed_data_file=None):
@@ -59,7 +59,14 @@ class ArmBenchDataset(Dataset):
                 self.query_associated_container_objects.append(list(container_json.keys()))
 
                 # list images in query the object's folder
-                self.query_imgs_paths_list.append(glob.glob(os.path.join(self.query_imgs_path, query_obj_id) + '/*.jpg'))
+                # PickRGB is always the first image in the list
+                PickRGB_path = os.path.join(self.query_imgs_path, query_obj_id, 'PickRGB.jpg')
+                query_imgs_paths = glob.glob(os.path.join(self.query_imgs_path, query_obj_id) + '/*.jpg')
+                # remove PickRGB from the list
+                query_imgs_paths.remove(PickRGB_path)
+                # join PickRGB to the beginning of the list
+                query_imgs_paths.insert(0, PickRGB_path)
+                self.query_imgs_paths_list.append(query_imgs_paths)
 
             self.gallery_objs_paths_list = {}
             # get list of images os all gallery objects
@@ -73,8 +80,9 @@ class ArmBenchDataset(Dataset):
         pixel_std = [0.229, 0.224, 0.225]
         image_size = [224, 224]
         self.transforms = T.Compose([
+            T.ToTensor(),
             T.Normalize(mean=pixel_mean, std=pixel_std),
-            T.Resize(image_size)
+            T.Resize(image_size, antialias=True)
         ])
 
     def save_processed_data(self, processed_pickle_file_path):
@@ -97,7 +105,7 @@ class ArmBenchDataset(Dataset):
         """
         method will always return a list of 6 images. Just to be able to stack tensor nicely and run the whole code on GPU
         """
-        imgs = [self.transforms(read_image(img_path).clone().float()) for img_path in imgs_paths]
+        imgs = [self.transforms(Image.open(img_path)) for img_path in imgs_paths]
         # make list of images always 6 images
         if len(imgs) == 1:
             imgs = imgs * 6
@@ -197,7 +205,8 @@ def test_armbench(model, test_loader, writer, epoch):
     #criterion = CentroidTripletLoss()
 
     # ranking for CMC metrics
-    rank_1, rank_2, rank_3 = [], [], []
+    pre_pick_rank_1, pre_pick_rank_2, pre_pick_rank_3 = [], [], []
+    pre_post_pick_rank_1, pre_post_pick_rank_2, pre_post_pick_rank_3 = [], [], []
 
     with torch.no_grad():
         for (all_imgs, num_gallery_objs) in tqdm.tqdm(test_loader):
@@ -213,7 +222,30 @@ def test_armbench(model, test_loader, writer, epoch):
             # calculate centroids per object
             all_centroids = torch.mean(all_embeddings, dim=1)
 
-            # iterate over each query object (batch size)
+            # iterate over each query object (batch size) to calculate CMC metrics for pre-pick
+            query_id = 0
+            for i in range(len(num_gallery_objs)):
+                # get PickRGB image embedding
+                query_embedding = all_embeddings[query_id][0]
+                # get gallery objects embeddings
+                gallery_centroids = all_centroids[query_id+1:query_id+num_gallery_objs[i]+1]
+                # increment query_id for next iteration
+                query_id += num_gallery_objs[i] + 1
+
+                # calculate distances between query and gallery objects centroids
+                dist_matrix = torch.nn.functional.cosine_similarity(query_embedding.unsqueeze(0), gallery_centroids, dim=1)
+                dist_matrix = 1 - dist_matrix
+                dist_matrix = dist_matrix.cpu().numpy()
+
+                # sort closest objects
+                top_ids = np.argsort(dist_matrix)
+
+                # get rankings - find if index 0 (matching object) is in rank 1, 2 or 3
+                pre_pick_rank_1 += [1] if 0 in top_ids[:1] else [0]
+                pre_pick_rank_2 += [1] if 0 in top_ids[:2] else [0]
+                pre_pick_rank_3 += [1] if 0 in top_ids[:3] else [0]
+
+            # iterate over each query object (batch size) to calculate CMC metrics for pre-post-pick
             query_id = 0
             for i in range(len(num_gallery_objs)):  # use len(num_gallery_objs) instead of batch_size to handle last batch
                 # get query object embeddings
@@ -232,16 +264,26 @@ def test_armbench(model, test_loader, writer, epoch):
                 top_ids = np.argsort(dist_matrix)
 
                 # get rankings - find if index 0 (matching object) is in rank 1, 2 or 3
-                rank_1 += [1] if 0 in top_ids[:1] else [0]
-                rank_2 += [1] if 0 in top_ids[:2] else [0]
-                rank_3 += [1] if 0 in top_ids[:3] else [0]
+                pre_post_pick_rank_1 += [1] if 0 in top_ids[:1] else [0]
+                pre_post_pick_rank_2 += [1] if 0 in top_ids[:2] else [0]
+                pre_post_pick_rank_3 += [1] if 0 in top_ids[:3] else [0]
 
-    # calculate CMC metrics
-    rank_1, rank_2, rank_3 = np.mean(rank_1), np.mean(rank_2), np.mean(rank_3)
-    print("Rank 1: ", rank_1)
-    print("Rank 2: ", rank_2)
-    print("Rank 3: ", rank_3)
+    # calculate CMC metrics for pre-pick
+    print("Pre-pick:")
+    pre_pick_rank_1, pre_pick_rank_2, pre_pick_rank_3 = np.mean(pre_pick_rank_1), np.mean(pre_pick_rank_2), np.mean(pre_pick_rank_3)
+    print("Rank 1: ", pre_pick_rank_1)
+    print("Rank 2: ", pre_pick_rank_2)
+    print("Rank 3: ", pre_pick_rank_3)
+    writer.add_scalar('ArmBench/Test_pre-pick/rank1', pre_pick_rank_1, epoch)
+    writer.add_scalar('ArmBench/Test_pre-pick/rank2', pre_pick_rank_2, epoch)
+    writer.add_scalar('ArmBench/Test_pre-pick/rank3', pre_pick_rank_3, epoch)        
 
-    writer.add_scalar('ArmBench/Test/rank1', rank_1, epoch)
-    writer.add_scalar('ArmBench/Test/rank2', rank_2, epoch)
-    writer.add_scalar('ArmBench/Test/rank3', rank_3, epoch)
+    # calculate CMC metrics for pre-post-pick
+    print("Pre-post-pick:")
+    pre_post_pick_rank_1, pre_post_pick_rank_2, pre_post_pick_rank_3 = np.mean(pre_post_pick_rank_1), np.mean(pre_post_pick_rank_2), np.mean(pre_post_pick_rank_3)
+    print("Rank 1: ", pre_post_pick_rank_1)
+    print("Rank 2: ", pre_post_pick_rank_2)
+    print("Rank 3: ", pre_post_pick_rank_3)
+    writer.add_scalar('ArmBench/Test_pre-post-pick/rank1', pre_post_pick_rank_1, epoch)
+    writer.add_scalar('ArmBench/Test_pre-post-pick/rank2', pre_post_pick_rank_2, epoch)
+    writer.add_scalar('ArmBench/Test_pre-post-pick/rank3', pre_post_pick_rank_3, epoch)

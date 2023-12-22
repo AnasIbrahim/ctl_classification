@@ -6,11 +6,11 @@ import pickle
 import json
 import tqdm
 import numpy as np
+from PIL import Image
 
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms as T
-from torchvision.io import read_image
 
 class BOPDataset(Dataset):
     """
@@ -31,8 +31,9 @@ class BOPDataset(Dataset):
         pixel_std = [0.229, 0.224, 0.225]
         image_size = [224, 224]
         self.transforms = T.Compose([
+            T.ToTensor(),
             T.Normalize(mean=pixel_mean, std=pixel_std),
-            T.Resize(image_size)
+            T.Resize(image_size, antialias=True),
         ])
 
     def __len__(self):
@@ -41,7 +42,7 @@ class BOPDataset(Dataset):
     def load_folder_images(self, folder_path, image_extension='jpg'):
         images = []
         for img_path in glob.glob(folder_path + '/*.' + image_extension):
-            images.append(self.transforms(read_image(img_path).clone().float()))
+            images.append(self.transforms(Image.open(img_path)))
         return images
 
     def __getitem__(self, dummy_id):

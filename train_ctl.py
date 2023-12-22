@@ -160,7 +160,7 @@ def main():
         scheduler.step()
 
         writer.flush()
-        torch.save(model.state_dict(), os.path.join(output_path, 'models', 'epoch-'+str(epoch) + ".pt"))
+        torch.save(model.module.state_dict(), os.path.join(output_path, 'models', 'epoch-'+str(epoch) + ".pt"))
 
         print("Epoch Time:" + str(datetime.datetime.now() - start_time))
         start_time = datetime.datetime.now()
