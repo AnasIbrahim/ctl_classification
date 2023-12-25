@@ -37,7 +37,7 @@ class CTLModel(nn.Module):
 def train(model, device, train_loader, optimizer, writer, epoch):
     print("Training epoch: " + str(epoch))
     model.train()
-    for p in model.module.parameters():
+    for p in model.parameters():
         p.requires_grad = True
 
     criterion = nn.TripletMarginLoss(margin=0.1, p=2)
@@ -126,11 +126,16 @@ def main():
     bop_test_loader = torch.utils.data.DataLoader(bop_test_dataset, **test_kwargs)
     print("Loaded training and test dataset")
 
-    model = CTLModel().to(device)
+    #model = CTLModel().to(device)
+    model = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V1)
     #model = torchvision.models.resnet152(weights=torchvision.models.ResNet152_Weights.IMAGENET1K_V2)
-    #model = model.to(device)
+    #model = torchvision.models.vit_l_32(weights=torchvision.models.ViT_L_32_Weights.DEFAULT)
+    model = model.to(device)
 
-    model = nn.DataParallel(model)
+    model_train_opt = torch.compile(model)
+
+    #model = nn.DataParallel(model)
+
     print("Model created")
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -142,17 +147,17 @@ def main():
     # Run test before training
     print("=====================")
     print("Running test before training")
-    test_bop(model, bop_test_loader, bop_test_batch_size, writer, epoch=0)
-    test_armbench(model, armbench_test_loader, writer, epoch=0)
+    test_bop(device, model, bop_test_loader, bop_test_batch_size, writer, epoch=0)
+    test_armbench(device, model, armbench_test_loader, writer, epoch=0)
 
     start_time = datetime.datetime.now()
 
     for epoch in range(1, epochs + 1):
         print("=====================")
         print("Epoch: " + str(epoch))
-        train(model, device, armbench_train_loader, optimizer, writer, epoch)
-        test_bop(model, bop_test_loader, bop_test_batch_size, writer, epoch)
-        test_armbench(model, armbench_test_loader, writer, epoch)
+        train(model_train_opt, device, armbench_train_loader, optimizer, writer, epoch)
+        test_bop(device, model, bop_test_loader, bop_test_batch_size, writer, epoch)
+        test_armbench(device, model, armbench_test_loader, writer, epoch)
 
         # add learning rate to tensorboard
         writer.add_scalar('LR', scheduler.get_lr()[0], epoch)
@@ -160,7 +165,7 @@ def main():
         scheduler.step()
 
         writer.flush()
-        torch.save(model.module.state_dict(), os.path.join(output_path, 'models', 'epoch-'+str(epoch) + ".pt"))
+        torch.save(model.state_dict(), os.path.join(output_path, 'models', 'epoch-'+str(epoch) + ".pt"))
 
         print("Epoch Time:" + str(datetime.datetime.now() - start_time))
         start_time = datetime.datetime.now()

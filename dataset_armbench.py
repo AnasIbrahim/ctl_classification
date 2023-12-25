@@ -198,7 +198,7 @@ class ArmBenchDataset(Dataset):
         return all_imgs, num_gallery_objs
 
 
-def test_armbench(model, test_loader, writer, epoch):
+def test_armbench(device, model, test_loader, writer, epoch):
     model.eval()
 
     test_loss = 0
@@ -210,6 +210,7 @@ def test_armbench(model, test_loader, writer, epoch):
 
     with torch.no_grad():
         for (all_imgs, num_gallery_objs) in tqdm.tqdm(test_loader):
+            all_imgs = all_imgs.to(device)
             # run the model
             all_embeddings = model(all_imgs)
             # normalize embeddings

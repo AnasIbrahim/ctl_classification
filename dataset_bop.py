@@ -69,13 +69,16 @@ class BOPDataset(Dataset):
         return query_imgs, query_ids, gallery_imgs, gallery_ids
 
 
-def test_bop(model, test_loader, batch_size, writer, epoch):
+def test_bop(device, model, test_loader, batch_size, writer, epoch):
     print("Evaluating on BOP dataset")
     model.eval()
 
     with torch.no_grad():
         # load query and gallery images
         query_imgs, query_ids, gallery_imgs, gallery_ids = test_loader.dataset[0]
+
+        query_imgs = query_imgs.to(device)
+        gallery_imgs = gallery_imgs.to(device)
 
         # get embeddings - dataset is small, all images can be loaded at once
         query_embeddings = model(query_imgs)
