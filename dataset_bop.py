@@ -20,8 +20,8 @@ class BOPDataset(Dataset):
     def __init__(self, dataset_path):
         super(BOPDataset, self).__init__()
         self.dataset_path = dataset_path
-        self.query_imgs_paths = os.path.join(dataset_path, 'query_good_light_only_original')
-        self.gallery_imgs_paths = os.path.join(dataset_path, 'gallery_real_resized_256')
+        self.query_imgs_paths = os.path.join(dataset_path, 'query_white_all_light')
+        self.gallery_imgs_paths = os.path.join(dataset_path, 'gallery_real_white_background')
 
         # get number of objects in the dataset (query or gallery are the same)
         self.num_objects = len(os.listdir(self.query_imgs_paths))

@@ -8,7 +8,7 @@ import torch.optim as optim
 import torchvision
 import tqdm
 from torch.utils.data import Dataset
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.tensorboard import SummaryWriter
 
 from dataset_armbench import ArmBenchDataset, test_armbench
@@ -79,17 +79,18 @@ def train(model, device, train_loader, optimizer, writer, epoch):
 
 
 def main():
-    armbench_train_batch_size = 40
-    armbench_test_batch_size = 20
+    armbench_train_batch_size = 60
+    armbench_test_batch_size = 40
     bop_test_batch_size = 500
-    epochs = 15
+    epochs = 120
     #seed = 1
+    evaluation_interval = 5
 
     armbench_dataset_path = '/raid/datasets/armbench-object-id-0.1'
     armbench_processed_data_file_train = '/home/gouda/segmentation/ctl_classification/processed_armbench_dataset_train.pickle'
     armbench_processed_data_file_test =  '/home/gouda/segmentation/ctl_classification/processed_armbench_dataset_test.pickle'
     hope_dataset_path = '/raid/datasets/hope/classification'
-    output_path = '/home/gouda/segmentation/scratch_training_output/train_1'
+    output_path = '/home/gouda/segmentation/scratch_training_output/train_vit'
     
     train_kwargs = {'batch_size': armbench_train_batch_size,
                     'shuffle': True}
@@ -126,21 +127,33 @@ def main():
     bop_test_loader = torch.utils.data.DataLoader(bop_test_dataset, **test_kwargs)
     print("Loaded training and test dataset")
 
+    print("creating and compiling model")
+    # calculate time to compile model
+    start_time = datetime.datetime.now()
+
     #model = CTLModel().to(device)
-    model = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V1)
+    #model = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V1)
     #model = torchvision.models.resnet152(weights=torchvision.models.ResNet152_Weights.IMAGENET1K_V2)
     #model = torchvision.models.vit_l_32(weights=torchvision.models.ViT_L_32_Weights.DEFAULT)
+    model = torchvision.models.vit_b_16(weights=torchvision.models.ViT_B_16_Weights.DEFAULT)
+    #model = torch.hub.load('XingangPan/IBN-Net', 'resnet50_ibn_a', pretrained=True)
+
     model = model.to(device)
 
-    model_train_opt = torch.compile(model)
+    #model = torch.compile(model, mode='reduce-overhead')
+    #model = torch.compile(model, mode='max-autotune')
 
-    #model = nn.DataParallel(model)
+    # running compiled model for the first time to avoid compilation time in first epoch
+    #model(torch.rand(armbench_train_batch_size, 3, 224, 224).to(device))
 
-    print("Model created")
+    model = nn.DataParallel(model)
 
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    # scheduler lowers LR by a factor of 10 every 3 epochs
-    scheduler = StepLR(optimizer, step_size=step_size, gamma=gamma)
+    #print("Model compile time:" + str(datetime.datetime.now() - start_time))
+
+    # make SGB optimizer
+    optimizer = optim.SGD(model.parameters(), lr=lr)
+    # use MultiStepLR scheduler
+    scheduler = MultiStepLR(optimizer, milestones=[40, 70], gamma=gamma)
 
     writer = SummaryWriter(os.path.join(output_path, 'logs'))
 
@@ -155,17 +168,19 @@ def main():
     for epoch in range(1, epochs + 1):
         print("=====================")
         print("Epoch: " + str(epoch))
-        train(model_train_opt, device, armbench_train_loader, optimizer, writer, epoch)
-        test_bop(device, model, bop_test_loader, bop_test_batch_size, writer, epoch)
-        test_armbench(device, model, armbench_test_loader, writer, epoch)
+        train(model, device, armbench_train_loader, optimizer, writer, epoch)
+
+        if epoch % evaluation_interval == 0:
+            test_bop(device, model, bop_test_loader, bop_test_batch_size, writer, epoch)
+            test_armbench(device, model, armbench_test_loader, writer, epoch)
+            torch.save(model.module.state_dict(), os.path.join(output_path, 'models', 'epoch-'+str(epoch) + ".pt"))
 
         # add learning rate to tensorboard
-        writer.add_scalar('LR', scheduler.get_lr()[0], epoch)
+        writer.add_scalar('LR', scheduler.get_last_lr()[0], epoch)
 
         scheduler.step()
 
         writer.flush()
-        torch.save(model.state_dict(), os.path.join(output_path, 'models', 'epoch-'+str(epoch) + ".pt"))
 
         print("Epoch Time:" + str(datetime.datetime.now() - start_time))
         start_time = datetime.datetime.now()
