@@ -5,49 +5,43 @@ import cv2
 import numpy as np
 import tqdm
 
+import torch
+
 from pycocotools.coco import COCO
 import pycocotools.mask as maskUtils
-
-import sys
-dounseen_path = '/home/gouda/segmentation/image_agnostic_segmentation/scripts'
-sys.path.insert(0, dounseen_path)
-from dounseen.dounseen import UnseenSegment, UnseenClassifier, draw_segmented_image
 
 from detectron2.evaluation import coco_evaluation
 from detectron2.structures.instances import Instances
 from detectron2.structures.boxes import Boxes
-import torch
+
+
+
+import sys
+dounseen_path = '/home/gouda/segmentation/image_agnostic_segmentation/scripts'
+sys.path.insert(0, dounseen_path)
+from dounseen.dounseen import UnseenSegment, UnseenClassifier
+from dounseen import utils
 
 # ___________________________________________________________________________________________________
 # Parameters
 # ___________________________________________________________________________________________________
-#gt_json = '/media/gouda/ssd_data/datasets/dopose_coco/val/split_gt_coco_modal.json'
-#gt_json = '/media/gouda/ssd_data/datasets/hope/val/split_gt_coco_modal.json'
-gt_json = '/media/gouda/ssd_data/datasets/lm/test_all/split_gt_coco_modal.json'
+datasets_path = '/media/gouda/ssd_data/datasets'
+predictions_json = '/home/gouda/segmentation/ctl_training_output/scratch_training_output/hope_eval/result.json'
 
+#lm_query_obj_name = 'obj_000008'
 
-#dataset_path = '/media/gouda/ssd_data/datasets/dopose_coco/val/'
-#dataset_path = '/media/gouda/ssd_data/datasets/hope/val'
-dataset_path = '/media/gouda/ssd_data/datasets/lm/test_all'
-
-#gallery_path = '/media/gouda/ssd_data/datasets/dopose/classification/gallery/cropped/gallery_real_original_cropped_augmented_resized_256'
-#gallery_path = '/media/gouda/ssd_data/datasets/hope/classification/gallery_real_resized_256_augmented'
-gallery_path = '/media/gouda/ssd_data/datasets/lm/classification/gallery_synthetic_big_resized_256'
-
-#camera_params = {'fx': 1778.81005859375, 'fy': 1778.870361328125, 'x_offset': 967.9315795898438, 'y_offset': 572.4088134765625}  # DoPose
-#camera_params = {'fx': 1390.53, 'fy': 1386.99, 'x_offset': 964.957, 'y_offset': 522.586}  # HOPE
-camera_params = {'fx': 572.4114, 'fy': 573.57043, 'x_offset': 325.2611, 'y_offset': 242.04899}  # LM
+dataset_name = 'hope'
+dataset_path = os.path.join(datasets_path, dataset_name, 'val')
+gt_json = os.path.join(dataset_path, 'split_gt_coco_modal.json')
+gallery_path = os.path.join(datasets_path, dataset_name,'classification/gallery_real_resized_256_augmented')
 
 # dounseen parameters
-seg_method = 'SAM'
+seg_method = 'GT'
 classification_method = 'vit-b-16-ctl'
 maskrcnn_model_path = os.path.join(dounseen_path, '../models/segmentation/segmentation_mask_rcnn.pth')
 sam_model_path = os.path.join(dounseen_path, '../models/sam_vit_b_01ec64.pth')
 classification_model_path = os.path.join(dounseen_path, '../models/classification/classification_vit_b_16_ctl.pth')
-batch_size = 100
-
-predictions_json = '/media/gouda/ssd_data/datasets/DoUnseen_evaluation/lm/scene_1_SAM.json'
-
+classification_batch_size = 100
 # ___________________________________________________________________________________________________
 
 segmentation_methods = ['GT', 'maskrcnn', 'SAM']
@@ -62,9 +56,9 @@ gt_coco = COCO(gt_json)
 
 # make DoUnseen segmentation and classification objects
 if seg_method != 'GT':
-    segmentor = UnseenSegment(method=seg_method, sam_model_path=sam_model_path, maskrcnn_model_path=maskrcnn_model_path)
+    segmentor = UnseenSegment(method=seg_method, sam_model_path=sam_model_path, maskrcnn_model_path=maskrcnn_model_path, filter_sam_predictions=True, smallest_segment_size=50*50)
 
-classifier = UnseenClassifier(model_path=classification_model_path, gallery_images=gallery_path, gallery_buffered_path=None, augment_gallery=False, method=classification_method, batch_size=batch_size)
+classifier = UnseenClassifier(model_path=classification_model_path, gallery_images=gallery_path, gallery_buffered_path=None, augment_gallery=False, method=classification_method, batch_size=classification_batch_size)
 
 last_obj_name = None
 
@@ -89,18 +83,11 @@ for image in tqdm.tqdm(images):
             anno['score'] = 1.00  # all segmentation from GT are correct
     # DoSegment
     elif seg_method == 'maskrcnn' or seg_method == 'SAM':
-        # log time to segment image
-        import datetime
-        start_time = datetime.datetime.now()
         masks_boxes_predictions = segmentor.segment_image(rgb_img)
-        end_time = datetime.datetime.now()
-        print(f"Segmentation time: {end_time - start_time}")
 
-        # log conversion time
-        start_time = datetime.datetime.now()
         # convert predictions to detectron2 format
         boxes = Boxes(masks_boxes_predictions['bboxes'])
-        # set scores all as 0.9
+        # set scores all as 0.9 - this is dummy and not being used anywhere
         scores = torch.tensor([0.9] * len(masks_boxes_predictions['bboxes']))
         # set all labels as 0
         labels = torch.tensor([0] * len(masks_boxes_predictions['bboxes']))
@@ -114,73 +101,80 @@ for image in tqdm.tqdm(images):
         instances.set('pred_masks', masks)
         predictions = {'instances': instances}
 
-        annos = coco_evaluation.instances_to_coco_json(predictions['instances'].to('cpu'), image['id'])
-        image_annotations.extend(annos)
-        #from detectron2.data import MetadataCatalog
-        #from detectron2.utils.visualizer import Visualizer
-        #from detectron2.utils.visualizer import ColorMode
-        #MetadataCatalog.get("user_data").set(thing_classes=[""])
-        #metadata = MetadataCatalog.get("user_data")
-        #v = Visualizer(rgb_img,
-        #               metadata=metadata,
-        #               instance_mode=ColorMode.IMAGE
-        #               )
-        #out = v.draw_instance_predictions(predictions["instances"].to("cpu"))
-        #segmented_img = out.get_image()
-        #cv2.imshow("img", segmented_img)
-        #cv2.waitKey(0)
-        #cv2.destroyAllWindows()
+        image_annotations = coco_evaluation.instances_to_coco_json(predictions['instances'].to('cpu'), image['id'])
 
-        # time
-        end_time = datetime.datetime.now()
-        print(f"Conversion time: {end_time - start_time}")
-        exit()
+        # visualization
+        from detectron2.data import MetadataCatalog
+        from detectron2.utils.visualizer import Visualizer
+        from detectron2.utils.visualizer import ColorMode
+        MetadataCatalog.get("user_data").set(thing_classes=[""])
+        metadata = MetadataCatalog.get("user_data")
+        v = Visualizer(rgb_img,
+                       metadata=metadata,
+                       instance_mode=ColorMode.IMAGE
+                       )
+        out = v.draw_instance_predictions(predictions["instances"].to("cpu"))
+        segmented_img = out.get_image()
+        # show image resized to half
+        cv2.imshow("img", cv2.resize(segmented_img, (0, 0), fx=0.5, fy=0.5))
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
     # ===============================
     # Classify with MaskRCNN
     # ===============================
-    #for id, annotation in enumerate(image_annotations):
-    #    mask = gt_coco.annToMask(annotation)
-    #    masked_rgb = cv2.bitwise_or(rgb_img,rgb_img,mask=mask)
-    #    bbox = annotation['bbox']
-    #    bbox = [int(val) for val in bbox]
-    #    segment_img = masked_rgb[bbox[1]:bbox[1]+bbox[3],bbox[0]:bbox[0]+bbox[2]]
-    #    cv2.imshow("img", segment_img)
-    #    cv2.waitKey(0)
-    #    cv2.destroyAllWindows()
-    #    # Linemod dataset has one object annotated per image, so to evaluate linemod we need to search for that object
-    #    # in this case the object to detect is the object in the coco annotation
-    #    # search (find_object) of the annotation
-    #    predicted_class = classifier.find_object(rgb_img, [mask], [bbox], obj_name=obj_name, centroid=False)
-    #    predicted_class = int(predicted_class[-2:])
-    #    #print(predicted_class)
-    #    if predicted_class == annotation['category_id']:
-    #        acc.append(True)
-    #    else:
-    #        acc.append(False)
-    #    image_annotations[id]['category_id'] = predicted_class
+    segments = []
+    for id, annotation in enumerate(image_annotations):
+        mask = gt_coco.annToMask(annotation)
+        # TODO make background white
+        masked_rgb = cv2.bitwise_or(rgb_img,rgb_img,mask=mask)
+        bbox = annotation['bbox']
+        bbox = [int(val) for val in bbox]
+        segment_img = masked_rgb[bbox[1]:bbox[1]+bbox[3],bbox[0]:bbox[0]+bbox[2]]
+        #cv2.imshow("img", segment_img)
+        #cv2.waitKey(0)
+        #cv2.destroyAllWindows()
+        segments.append(segment_img)
+    predicted_classes, predicted_scores = classifier.classify_all_objects(segments, threshold=0.0)
+    predicted_classes = predicted_classes.tolist()
+    predicted_scores = predicted_scores.tolist()
+    # remove predicted_classes with class -1 and their corresponding annotations
+    new_annotations = []
+    for idx in range(len(predicted_classes)):
+        if predicted_classes[idx] != -1:
+            image_annotations[idx]['category_id'] = predicted_classes[idx] + 1
+            image_annotations[idx]['score'] = predicted_scores[idx]
+            new_annotations.append(image_annotations[idx])
+    predicted_annotations.extend(new_annotations)
     # ===============================
 
     # ===============================
     # Segment Linemod
     # ===============================
-    query_images = []
-    for id, annotation in enumerate(image_annotations):
-        #polygon_rle = annotation['segmentation']['counts']
-        mask = gt_coco.annToMask(annotation)
-        masked_rgb = cv2.bitwise_or(rgb_img,rgb_img,mask=mask)
-        bbox = annotation['bbox']
-        bbox = [int(val) for val in bbox]
-        segment_img = masked_rgb[bbox[1]:bbox[1]+bbox[3],bbox[0]:bbox[0]+bbox[2]]
-        query_images.append(segment_img)
-        query_obj_id = [item for item in gt_data['annotations'] if item['image_id'] == image['id']][0]['category_id']
-        image_annotations[id]['category_id'] = query_obj_id
-    query_obj_name = 'obj_' + f'{query_obj_id:06}'
-    segment_id = classifier.find_object(query_images, obj_name=query_obj_name, centroid=False)
-    corresponding_anno = image_annotations[segment_id]
-    #cv2.imshow("img", query_images[segment_id])
+    #query_images = []
+    #for id, annotation in enumerate(image_annotations):
+    #    #polygon_rle = annotation['segmentation']['counts']
+    #    mask = gt_coco.annToMask(annotation)
+    #    # apply mask to rgb image but make the background white
+    #    masked_rgb = copy.deepcopy(rgb_img)
+    #    masked_rgb[mask == 0] = [255, 255, 255]
+    #    bbox = annotation['bbox']
+    #    bbox = [int(val) for val in bbox]
+    #    segment_img = masked_rgb[bbox[1]:bbox[1]+bbox[3],bbox[0]:bbox[0]+bbox[2]]
+    #    query_images.append(segment_img)
+    #    query_obj_id = [item for item in gt_data['annotations'] if item['image_id'] == image['id']][0]['category_id']
+    #    image_annotations[id]['category_id'] = query_obj_id
+    #if lm_query_obj_name is None:  # if no object name is given, use the object id
+    #    lm_query_obj_name = 'obj_' + f'{query_obj_id:06}'
+    #segment_id, score = classifier.find_object(query_images, obj_name=lm_query_obj_name, method='max')
+    #print("score: " + str(score))
+    #corresponding_anno = image_annotations[segment_id]
+    ## save segmented image
+    ##cv2.imwrite(os.path.join(save_img_path, image['file_name']), query_images[segment_id])
+    #cv2.imshow("img", cv2.resize(query_images[segment_id], (0, 0), fx=0.5, fy=0.5))
     #cv2.waitKey(0)
     #cv2.destroyAllWindows()
-    predicted_annotations.append(image_annotations[segment_id])
+    #predicted_annotations.append(image_annotations[segment_id])
 
 #if seg_method == 'GT':
 #    acc = np.array(acc)

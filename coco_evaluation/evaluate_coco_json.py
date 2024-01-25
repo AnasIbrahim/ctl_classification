@@ -1,19 +1,13 @@
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 import json
+import os
 
-#gt_json = '/media/gouda/ssd_data/datasets/dopose_coco/val/split_gt_coco_modal.json'
-#gt_json = '/media/gouda/ssd_data/datasets/hope/val/split_gt_coco_modal.json'
-gt_json = '/media/gouda/ssd_data/datasets/lm/test_all/split_gt_coco_modal.json'
-
-# Results from different methods
-# detectron2 trained on DoPose
-#results_json = '/media/gouda/ssd_data/unseen_object_classification/train_dopose_detectron/train_1/inference/coco_instances_results.json'
-#results_json = '/media/gouda/ssd_data/unseen_object_classification/train_hope_detectron/train_hope_video_3x/inference/coco_instances_results.json'
-# GT masks + DoClassify
-#results_json = '/media/gouda/ssd_data/unseen_object_classification/coco_evaluations/dopose/vit/doseg.json'
-#results_json = '/media/gouda/ssd_data/unseen_object_classification/coco_evaluations/hope/vit/gt.json'
-results_json = '/media/gouda/ssd_data/datasets/DoUnseen_evaluation/lm/scene_1_SAM.json'
+datasets_path = '/media/gouda/ssd_data/datasets'
+dataset_name = 'hope'
+dataset_path = os.path.join(datasets_path, dataset_name, 'val')
+gt_json = os.path.join(dataset_path, 'split_gt_coco_modal.json')
+results_json = '/home/gouda/segmentation/ctl_training_output/scratch_training_output/hope_eval/result.json'
 
 annType = 'bbox'
 #annType = 'segm'
