@@ -7,7 +7,7 @@ datasets_path = '/media/gouda/ssd_data/datasets'
 dataset_name = 'hope'
 dataset_path = os.path.join(datasets_path, dataset_name, 'val')
 gt_json = os.path.join(dataset_path, 'split_gt_coco_modal.json')
-results_json = '/home/gouda/segmentation/ctl_training_output/scratch_training_output/hope_eval/result.json'
+results_json = '/home/gouda/segmentation/ctl_training_output/scratch_training_output/hope_eval/result_SAM_DINO.json'
 
 annType = 'bbox'
 #annType = 'segm'
