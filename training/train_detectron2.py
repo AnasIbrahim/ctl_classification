@@ -118,12 +118,9 @@ def setup(args):
     training_dataset_path = '/media/gouda/ssd_data/datasets/hope/train_video'
     validation_dataset_path = '/media/gouda/ssd_data/datasets/hope/val'
 
-    # DoPose
-    #classes = [str(x+1) for x in range(0,18)] # BOP object count starts from 1
     # HOPE
     classes = [str(x+1) for x in range(0,28)] # BOP object count starts from 1
 
-    #train_dataset_name = "dopose_train"
     train_dataset_name = "hope_video"
     register_coco_instances(train_dataset_name, {},
                             os.path.join(training_dataset_path, "split_gt_coco_modal.json"),
@@ -131,7 +128,6 @@ def setup(args):
 
     MetadataCatalog.get(train_dataset_name).set(thing_classes=classes)
 
-    #val_dataset_name = "dopose_val"
     val_dataset_name = "hope_val"
     register_coco_instances(val_dataset_name, {},
                             os.path.join(validation_dataset_path, "split_gt_coco_modal.json"),
@@ -142,14 +138,7 @@ def setup(args):
     cfg.DATASETS.TEST = [val_dataset_name]
     cfg.TEST.EVAL_PERIOD = 1000
 
-    # DoPose
-    #cfg.MODEL.ROI_HEADS.NUM_CLASSES = 18
-    #cfg.MODEL.RETINANET.NUM_CLASSES = 18
-    #cfg.MODEL.SEM_SEG_HEAD.NUM_CLASSES = 18
-    # HOPE
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = 28
-    #cfg.MODEL.RETINANET.NUM_CLASSES = 28
-    #cfg.MODEL.SEM_SEG_HEAD.NUM_CLASSES = 28
 
     cfg.SOLVER.MAX_ITER = 100000
     cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 512
@@ -160,12 +149,7 @@ def setup(args):
     cfg.INPUT.RANDOM_FLIP = "none"
 
     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_1x.yaml")
-    #cfg.MODEL.WEIGHTS = '/run/user/1002/gvfs/smb-share:server=129.217.152.32,share=data/Anas_Gouda/unseen_object_classification/train_dopose_detectron/train_1/model_0090499.pth'
-    #cfg.MODEL.WEIGHTS = '/run/user/1002/gvfs/smb-share:server=129.217.152.32,share=data/Anas_Gouda/unseen_object_classification/train_hope_detectron/train_hope_video/model_0014999.pth'
-
-    #cfg.OUTPUT_DIR = "/run/user/1002/gvfs/smb-share:server=129.217.152.32,share=data/Anas_Gouda/unseen_object_classification/train_dopose_detectron/train_X"
     cfg.OUTPUT_DIR = "/home/gouda/segmentation/ctl_training_output/scratch_training_output/detectron2/hope"
-    #cfg.OUTPUT_DIR = "/run/user/1002/gvfs/smb-share:server=129.217.152.32,share=data/Anas_Gouda/unseen_object_classification/detectron2_evaluation"
 
     cfg.freeze()
     default_setup(cfg, args)

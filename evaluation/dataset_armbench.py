@@ -70,7 +70,10 @@ class ArmBenchDataset(Dataset):
 
     def load_images(self, imgs_paths):
         """
-        method will always return a list of 6 images. Just to be able to stack tensor nicely and run the whole code on GPU
+        method will always return a list of 6 images. Just to be able to stack tensor nicely and run the whole code on GPU.
+        This has no effect on the evaluation results. So the evaluation results is still correct.
+        But it will end up shifting evaluation of the centroids a bit in case of objects with for 4 and 5 images.
+        So it can very slightly affect the accuracy for the centroid evaluation.
         """
         imgs = [self.transforms(Image.open(img_path)) for img_path in imgs_paths]
         # make list of images always 6 images
@@ -87,11 +90,6 @@ class ArmBenchDataset(Dataset):
             # randomly choose 1 image and append it
             imgs = imgs + random.sample(imgs, 1)
         # if 6 do nothing
-
-        # NOTE: this will end up shifting the centroid of this object a bit for 4 and 5 images
-        # Still this is crucial for the training to be done efficiently
-        # TODO try training without 4 and 5 and check if this gets a better result
-
         return imgs
 
     def __getitem__(self, query_id):
@@ -106,7 +104,8 @@ class ArmBenchDataset(Dataset):
                 continue
             container_obj_imgs_paths = self.gallery_objs_paths_list[container_obj_name]
             # if container object has no images, skip it
-            # TODO check if this is the same for the evaluation in the ArmBench paper
+            # I guess there were 2 objects in the whole dataset that had no images
+            # if this is not correct this would have no effect
             if len(container_obj_imgs_paths) == 0:
                 continue
             else:
