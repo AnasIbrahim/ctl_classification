@@ -131,7 +131,7 @@ class ArmBenchDataset(Dataset):
         return all_imgs, num_gallery_objs
 
 
-def test_armbench(device, model, test_loader, writer, epoch):
+def test_armbench(device, model, test_loader, epoch):
     model.eval()
 
     test_loss = 0
@@ -268,9 +268,6 @@ def test_armbench(device, model, test_loader, writer, epoch):
     print("Rank 1: ", abs_pre_pick_rank_1)
     print("Rank 2: ", abs_pre_pick_rank_2)
     print("Rank 3: ", abs_pre_pick_rank_3)
-    writer.add_scalar('ArmBench_Abs/Test_pre-pick/rank1', abs_pre_pick_rank_1, epoch)
-    writer.add_scalar('ArmBench_Abs/Test_pre-pick/rank2', abs_pre_pick_rank_2, epoch)
-    writer.add_scalar('ArmBench_Abs/Test_pre-pick/rank3', abs_pre_pick_rank_3, epoch)
 
     # calculate CMC metrics for pre-post-pick for abs
     print("Pre-post-pick:")
@@ -278,9 +275,6 @@ def test_armbench(device, model, test_loader, writer, epoch):
     print("Rank 1: ", abs_pre_post_pick_rank_1)
     print("Rank 2: ", abs_pre_post_pick_rank_2)
     print("Rank 3: ", abs_pre_post_pick_rank_3)
-    writer.add_scalar('ArmBench_Abs/Test_pre-post-pick/rank1', abs_pre_post_pick_rank_1, epoch)
-    writer.add_scalar('ArmBench_Abs/Test_pre-post-pick/rank2', abs_pre_post_pick_rank_2, epoch)
-    writer.add_scalar('ArmBench_Abs/Test_pre-post-pick/rank3', abs_pre_post_pick_rank_3, epoch)
 
     print("Centroid =================================")
     # calculate CMC metrics for pre-pick for centroid
@@ -289,9 +283,6 @@ def test_armbench(device, model, test_loader, writer, epoch):
     print("Rank 1: ", centroid_pre_pick_rank_1)
     print("Rank 2: ", centroid_pre_pick_rank_2)
     print("Rank 3: ", centroid_pre_pick_rank_3)
-    writer.add_scalar('ArmBench_Centroid/Test_pre-pick/rank1', centroid_pre_pick_rank_1, epoch)
-    writer.add_scalar('ArmBench_Centroid/Test_pre-pick/rank2', centroid_pre_pick_rank_2, epoch)
-    writer.add_scalar('ArmBench_Centroid/Test_pre-pick/rank3', centroid_pre_pick_rank_3, epoch)        
 
     # calculate CMC metrics for pre-post-pick for centroid
     print("Pre-post-pick:")
@@ -299,6 +290,3 @@ def test_armbench(device, model, test_loader, writer, epoch):
     print("Rank 1: ", centroid_pre_post_pick_rank_1)
     print("Rank 2: ", centroid_pre_post_pick_rank_2)
     print("Rank 3: ", centroid_pre_post_pick_rank_3)
-    writer.add_scalar('ArmBench_Centroid/Test_pre-post-pick/rank1', centroid_pre_post_pick_rank_1, epoch)
-    writer.add_scalar('ArmBench_Centroid/Test_pre-post-pick/rank2', centroid_pre_post_pick_rank_2, epoch)
-    writer.add_scalar('ArmBench_Centroid/Test_pre-post-pick/rank3', centroid_pre_post_pick_rank_3, epoch)

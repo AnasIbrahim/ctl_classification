@@ -46,7 +46,7 @@ def main():
     # Run test before training
     print("=====================")
     print("Running test before training")
-    test_armbench(device, model, armbench_test_loader, writer, epoch=0)
+    test_armbench(device, model, armbench_test_loader, epoch=0)
 
 
 if __name__ == '__main__':
