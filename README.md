@@ -39,8 +39,7 @@ mkdir models
 2. Download our pre-trained model (ViT/ResNet) from [here](https://drive.google.com/drive/folders/10itUoEmgJAEN_cYkUOURc-3pTTll7rXv?usp=sharing) inside the `models` directory.
 3. Run the following command to evaluate the model:
 ```commandline
-cd evaluation
-python evaluation/evaluate_ctl.py --pretrained_model_type 'ViT-B_16' --pretrained_model_path 'models/vit_b_16_ctl_augment_epoch_199.pth' --armbench_test_batch_size 15 --num_workers 8 --armbench_dataset_path /PATH/TO/ARMBENCH_OBJECT_IDENT_DATASET
+python evaluation/evaluate_ctl.py --pretrained_model_type 'ViT-B_16' --pretrained_model_path 'models/vit_b_16_ctl_augment_epoch_199.pth' --armbench_test_batch_size 5 --num_workers 8 --armbench_dataset_path /PATH/TO/ARMBENCH_OBJECT_IDENT_DATASET
 ```
 
 ## Citation
